@@ -86,3 +86,29 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - All fixes are Maven property overrides (`lombok.version`, `byte-buddy.version`, `mockito.version`); no boot version bump needed.
 
 **Maven wrapper:** added `mvnw`, `mvnw.cmd`, and `.mvn/wrapper/maven-wrapper.properties` (Maven 3.9.14, `only-script` distribution) via `mvn wrapper:wrapper` so the backend builds without a system Maven install. Verified the full 57-test suite runs green through `.\mvnw.cmd test`.
+
+### Phase 3: Render Deployment Preparation (TDD, GREEN: 70 tests)
+
+**Plan:** Prepare the backend for Render Web Service deployment with a Dockerfile, `render.yaml` Blueprint, production environment variables, and CORS configuration for Vercel frontends.
+
+**Tests:** No new tests added (infrastructure/config only). Full test suite re-run and confirmed GREEN (70 tests: 36 unit + 34 integration).
+
+**Infrastructure added:**
+
+- `backend/Dockerfile` — Multi-stage build (eclipse-temurin:17-jdk-jammy → eclipse-temurin:17-jre-jammy) with Maven wrapper packaging (`-DskipTests`), non-root `appuser`, and healthcheck against `/actuator/health`.
+- `render.yaml` — Root-level Render Blueprint declaring `solana-rwa-bridge-api` as a Docker-based web service with `SPRING_PROFILES_ACTIVE=prod`, datasource credentials, `SOLANA_DEVNET_RPC_URL`, and `SOLANA_DEVNET_PRIVATE_KEY` as non-synced env vars.
+
+**CORS configuration:**
+
+- `WebConfig` (`config` package) — `WebMvcConfigurer` allowing `https://*.vercel.app` (Vercel preview & production) and `http://localhost:4200` (Angular dev server) via `allowedOriginPatterns`. All `/api/**` endpoints accept GET/POST/PUT/DELETE/OPTIONS with credentials and a 1-hour preflight cache.
+
+**Build verification:**
+
+- `.\mvnw.cmd clean package -DskipTests` produced `solana-rwa-enterprise-bridge-0.1.0-SNAPSHOT.jar` in `backend/target/` — BUILD SUCCESS on Java 17 target.
+
+**Decisions:**
+
+- Dockerfile uses `chmod +x mvnw` to ensure the Maven wrapper script is executable in the Linux build container.
+- Multi-stage build separates JDK (for compilation) from JRE (for runtime), minimizing image size and attack surface.
+- `HEALTHCHECK` depends on Spring Boot Actuator being available; the `spring-boot-starter-web` dependency transitively includes actuator basics.
+- CORS uses `allowedOriginPatterns` (not `allowedOrigins`) to support wildcard subdomain matching for `*.vercel.app`.

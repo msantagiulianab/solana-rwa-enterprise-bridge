@@ -76,6 +76,35 @@ docker compose down -v    # stop + wipe volume
 | ✅ Done | JPA domain layer: `Investor`, `AssetToken`, `AuditLog` entities + Spring Data JPA repositories |
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/v1/investors` REST controllers, `GlobalExceptionHandler` |
 | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
+| ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 17), `render.yaml` Blueprint, CORS for Vercel origins |
+
+## Render Deployment
+
+### Blueprint
+
+The repo includes a [`render.yaml`](render.yaml) Blueprint at the root and a multi-stage [`backend/Dockerfile`](backend/Dockerfile). Connect the repository to [Render](https://render.com) and the Blueprint will auto-provision:
+
+- **Web Service `solana-rwa-bridge-api`** — Docker runtime, JRE 17, healthcheck at `/actuator/health`
+
+### Required Environment Variables (set in the Render dashboard)
+
+| Variable | Purpose |
+|----------|---------|
+| `SPRING_PROFILES_ACTIVE` | Set to `prod` (Blueprint default) |
+| `SPRING_DATASOURCE_URL` | Production PostgreSQL JDBC URL |
+| `SPRING_DATASOURCE_USERNAME` | Database user |
+| `SPRING_DATASOURCE_PASSWORD` | Database password |
+| `SOLANA_DEVNET_RPC_URL` | Solana Devnet JSON-RPC endpoint |
+| `SOLANA_DEVNET_PRIVATE_KEY` | Base58 keypair — **never commit** |
+
+### CORS
+
+CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rwa/bridge/config/`):
+
+| Origin | Purpose |
+|--------|---------|
+| `https://*.vercel.app` | Vercel preview & production deployments |
+| `http://localhost:4200` | Angular local development server |
 
 
 ## Test Counts

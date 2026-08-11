@@ -1,0 +1,26 @@
+# Render Blueprint – solana-rwa-enterprise-bridge
+# https://render.com/docs/blueprint-spec
+services:
+  - name: solana-rwa-bridge-api
+    type: web
+    env: docker
+    region: ohio
+    plan: starter
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: SOLANA_DEVNET_RPC_URL
+        sync: false
+      - key: SOLANA_DEVNET_PRIVATE_KEY
+        sync: false
+      - key: SERVER_PORT
+        value: "8080"
