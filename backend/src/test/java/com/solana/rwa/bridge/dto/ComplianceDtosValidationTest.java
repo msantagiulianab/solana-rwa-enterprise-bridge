@@ -1,6 +1,5 @@
 package com.solana.rwa.bridge.dto;
 
-import com.solana.rwa.bridge.entity.KycStatus;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -83,47 +82,47 @@ class ComplianceDtosValidationTest {
     }
 
     // ---------------------------------------------------------------
-    // InvestorRegistrationRequest
+    // InvestorRegistrationRequest (updated Phase 4 DTO)
     // ---------------------------------------------------------------
 
     @Test
     void investorRegistrationRequest_acceptsValidRequest() {
         InvestorRegistrationRequest request = InvestorRegistrationRequest.builder()
-                .walletAddress(VALID_WALLET)
-                .country("US")
-                .kycStatus(KycStatus.PENDING)
+                .fullName("Alice Johnson")
+                .email("alice@example.com")
+                .solanaAddress(VALID_WALLET)
                 .build();
 
         assertThat(validator.validate(request)).isEmpty();
     }
 
     @Test
-    void investorRegistrationRequest_rejectsBlankCountry() {
+    void investorRegistrationRequest_rejectsBlankFullName() {
         InvestorRegistrationRequest request = InvestorRegistrationRequest.builder()
-                .walletAddress(VALID_WALLET)
-                .country("")
-                .kycStatus(KycStatus.PENDING)
+                .fullName("")
+                .email("alice@example.com")
+                .solanaAddress(VALID_WALLET)
                 .build();
 
         Set<ConstraintViolation<InvestorRegistrationRequest>> violations = validator.validate(request);
 
         assertThat(violations).isNotEmpty();
         assertThat(violations)
-                .anyMatch(v -> v.getPropertyPath().toString().equals("country"));
+                .anyMatch(v -> v.getPropertyPath().toString().equals("fullName"));
     }
 
     @Test
-    void investorRegistrationRequest_rejectsNullKycStatus() {
+    void investorRegistrationRequest_rejectsBlankSolanaAddress() {
         InvestorRegistrationRequest request = InvestorRegistrationRequest.builder()
-                .walletAddress(VALID_WALLET)
-                .country("US")
-                .kycStatus(null)
+                .fullName("Alice Johnson")
+                .email("alice@example.com")
+                .solanaAddress("")
                 .build();
 
         Set<ConstraintViolation<InvestorRegistrationRequest>> violations = validator.validate(request);
 
         assertThat(violations).isNotEmpty();
         assertThat(violations)
-                .anyMatch(v -> v.getPropertyPath().toString().equals("kycStatus"));
+                .anyMatch(v -> v.getPropertyPath().toString().equals("solanaAddress"));
     }
 }

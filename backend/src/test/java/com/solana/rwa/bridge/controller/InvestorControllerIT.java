@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * MockMvc integration tests for {@link InvestorController}.
  *
- * <p>Verifies investor registration/update routing, Bean Validation (400),
+ * <p>Verifies investor registration routing, Bean Validation (400),
  * and the persisted investor payload returned on success.
  */
 @WebMvcTest(InvestorController.class)
@@ -36,103 +36,81 @@ class InvestorControllerIT {
     @Test
     void register_returns200AndInvestorWhenValid() throws Exception {
         Investor investor = Investor.builder()
+                .fullName("Alice Johnson")
+                .email("alice@example.com")
                 .walletAddress(WALLET)
-                .country("US")
                 .kycStatus(KycStatus.PENDING)
                 .build();
-        when(investorService.registerOrUpdate(any())).thenReturn(investor);
+        when(investorService.register(any())).thenReturn(investor);
 
-        mockMvc.perform(post("/api/v1/investors")
+        mockMvc.perform(post("/api/investors")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "walletAddress": "%s",
-                                  "country": "US",
-                                  "kycStatus": "PENDING"
+                                  "fullName": "Alice Johnson",
+                                  "email": "alice@example.com",
+                                  "solanaAddress": "%s"
                                 }
                                 """.formatted(WALLET)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.walletAddress").value(WALLET))
-                .andExpect(jsonPath("$.country").value("US"))
-                .andExpect(jsonPath("$.kycStatus").value("PENDING"));
+                .andExpect(jsonPath("$.fullName").value("Alice Johnson"))
+                .andExpect(jsonPath("$.email").value("alice@example.com"))
+                .andExpect(jsonPath("$.walletAddress").value(WALLET));
     }
 
     @Test
-    void register_returns200AndUpdatedInvestorWhenExisting() throws Exception {
-        Investor investor = Investor.builder()
-                .walletAddress(WALLET)
-                .country("CA")
-                .kycStatus(KycStatus.VERIFIED)
-                .build();
-        when(investorService.registerOrUpdate(any())).thenReturn(investor);
-
-        mockMvc.perform(post("/api/v1/investors")
+    void register_returns400WhenFullNameBlank() throws Exception {
+        mockMvc.perform(post("/api/investors")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "walletAddress": "%s",
-                                  "country": "CA",
-                                  "kycStatus": "VERIFIED"
+                                  "fullName": "",
+                                  "email": "alice@example.com",
+                                  "solanaAddress": "%s"
                                 }
                                 """.formatted(WALLET)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.walletAddress").value(WALLET))
-                .andExpect(jsonPath("$.kycStatus").value("VERIFIED"));
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void register_returns400WhenWalletAddressBlank() throws Exception {
-        mockMvc.perform(post("/api/v1/investors")
+    void register_returns400WhenEmailBlank() throws Exception {
+        mockMvc.perform(post("/api/investors")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "walletAddress": "",
-                                  "country": "US",
-                                  "kycStatus": "PENDING"
+                                  "fullName": "Alice",
+                                  "email": "",
+                                  "solanaAddress": "%s"
+                                }
+                                """.formatted(WALLET)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void register_returns400WhenSolanaAddressBlank() throws Exception {
+        mockMvc.perform(post("/api/investors")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Alice",
+                                  "email": "alice@example.com",
+                                  "solanaAddress": ""
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void register_returns400WhenCountryBlank() throws Exception {
-        mockMvc.perform(post("/api/v1/investors")
+    void register_returns400WhenSolanaAddressInvalid() throws Exception {
+        mockMvc.perform(post("/api/investors")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "walletAddress": "%s",
-                                  "country": "",
-                                  "kycStatus": "PENDING"
+                                  "fullName": "Alice",
+                                  "email": "alice@example.com",
+                                  "solanaAddress": "NOT_A_VALID_ADDRESS"
                                 }
-                                """.formatted(WALLET)))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void register_returns400WhenKycStatusNull() throws Exception {
-        mockMvc.perform(post("/api/v1/investors")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "walletAddress": "%s",
-                                  "country": "US",
-                                  "kycStatus": null
-                                }
-                                """.formatted(WALLET)))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void register_returns400WhenKycStatusInvalidEnum() throws Exception {
-        mockMvc.perform(post("/api/v1/investors")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "walletAddress": "%s",
-                                  "country": "US",
-                                  "kycStatus": "NOT_A_REAL_STATUS"
-                                }
-                                """.formatted(WALLET)))
+                                """))
                 .andExpect(status().isBadRequest());
     }
 }

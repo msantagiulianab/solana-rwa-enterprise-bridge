@@ -64,6 +64,8 @@ class ComplianceServiceTest {
 
     private Investor investor(KycStatus status) {
         return Investor.builder()
+                .fullName("Test Investor")
+                .email("test@example.com")
                 .walletAddress(WALLET)
                 .kycStatus(status)
                 .country("US")
