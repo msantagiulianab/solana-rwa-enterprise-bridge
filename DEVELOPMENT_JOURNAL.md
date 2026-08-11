@@ -59,3 +59,5 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Upgraded managed Lombok 1.18.34 → 1.18.42 (JDK 23+ requires newer Lombok for annotation processing).
 - Upgraded managed Byte Buddy 1.14.19 → 1.17.8 and Mockito 5.11.0 → 5.20.0 so the inline mock maker used by `@MockBean`/`@WebMvcTest` can instrument classes on JDK 25.
 - All fixes are Maven property overrides (`lombok.version`, `byte-buddy.version`, `mockito.version`); no boot version bump needed.
+
+**Maven wrapper:** added `mvnw`, `mvnw.cmd`, and `.mvn/wrapper/maven-wrapper.properties` (Maven 3.9.14, `only-script` distribution) via `mvn wrapper:wrapper` so the backend builds without a system Maven install. Verified the full 57-test suite runs green through `.\mvnw.cmd test`.

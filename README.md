@@ -37,8 +37,11 @@ docker compose up -d
 # 2. Copy env template and export/load variables (or use your IDE env runner)
 cp .env.example .env
 
-# 3. Start the backend (requires a Maven 3.9+ install on PATH)
-mvn -f backend/pom.xml spring-boot:run
+# 3. Start the backend (uses the bundled Maven wrapper; no Maven install needed)
+cd backend
+./mvnw spring-boot:run
+# Windows: mvnw.cmd spring-boot:run
+# No wrapper? Requires Maven 3.9+ on PATH: mvn spring-boot:run
 ```
 
 Backend defaults to `http://localhost:8080`.
