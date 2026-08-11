@@ -19,6 +19,20 @@
 
     <properties>
         <java.version>17</java.version>
+        <!--
+            Override the Lombok version managed by Spring Boot 3.3.x (1.18.34).
+            JDK 23+ silently breaks annotation processing unless a recent Lombok
+            is used; 1.18.42 is the minimum that supports JDK 25 (the host JDK).
+        -->
+        <lombok.version>1.18.42</lombok.version>
+        <!--
+            Mockito's inline mock maker (used by @MockBean / @WebMvcTest) relies
+            on Byte Buddy. The versions managed by Spring Boot 3.3.x (Byte Buddy
+            1.14.19, Mockito 5.11.0) cannot instrument classes on Java 25, so we
+            upgrade both to versions that support the host JDK.
+        -->
+        <byte-buddy.version>1.17.8</byte-buddy.version>
+        <mockito.version>5.20.0</mockito.version>
     </properties>
 
     <dependencies>

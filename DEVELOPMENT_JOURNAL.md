@@ -36,3 +36,26 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Configured `maven-surefire-plugin` to include `**/*IT.java` so integration tests run on every build against H2 (no live RPC / Postgres required).
 - Constraint tests flush through `saveAndFlush()` so the Spring Data proxy translates the raw Hibernate `ConstraintViolationException` into Spring's `DataIntegrityViolationException`.
 - Production `ddl-auto` remains `validate`; schema migration will be managed via Flyway in a later phase.
+
+### Compliance Engine Service Layer & REST Controllers (TDD, GREEN: 57 tests)
+
+**Plan:** Gate every Solana RPC dispatch behind off-chain KYC/AML compliance checks, persist an immutable audit log for every attempt, and expose the gatekeeper and investor registration over `/api/v1/*`.
+
+**Tests added:**
+- `ComplianceServiceTest` (11, pure Mockito): approve when investor `VERIFIED` + asset `COMPLIANT`; block when investor missing, `REJECTED`, `FLAGGED_SANCTION`, or `PENDING`; block when asset missing or `NON_COMPLIANT`; **every check writes an APPROVED/BLOCKED `AuditLog`**; `getAuditLogs` returns history and throws `InvestorNotFoundException` for unknown wallets.
+- `SolanaAddressValidatorTest` (5): base58 alphabet (rejects `0/O/I/l`), 32-44 char length bounds, null passes through to `@NotBlank`.
+- `ComplianceDtosValidationTest` (7): `@NotBlank` / `@ValidSolanaAddress` on `ComplianceCheckRequest`, `@NotBlank`+`@Size(2,2)` country and `@NotNull` kycStatus on `InvestorRegistrationRequest`.
+- `ComplianceControllerIT` (8, MockMvc + `@MockBean`): 200 allowed/blocked responses, 400 on blank/invalid/blank fields and malformed JSON, 200 history retrieval, 404 for unknown investor.
+- `InvestorControllerIT` (6, MockMvc + `@MockBean`): 200 register + KYC update, 400 on blank wallet/country, null/invalid kycStatus.
+
+**Decisions:**
+- DTOs are immutable Lombok `@Builder` classes with Bean Validation annotations (`@NotBlank`, `@NotNull`, `@Size`, custom `@ValidSolanaAddress`).
+- `ComplianceService.verifyEligibility` implements the strict decision matrix and ALWAYS persists an `AuditLog` (action `CHECK_ELIGIBILITY`, status `APPROVED`/`BLOCKED`) via `auditLogRepository.save(...)` in a `@Transactional` method.
+- `InvestorService.registerOrUpdate` upserts by unique `walletAddress`, updating `kycStatus`/`country` on existing records.
+- `GlobalExceptionHandler` (`@RestControllerAdvice`) maps `InvestorNotFoundException`/`AssetTokenNotFoundException` to 404 and validation/unreadable-body errors to 400 with a consistent JSON error envelope.
+- Solana address validation is a lightweight base58 + 32-44 length constraint (custom `ConstraintValidator`), keeping unit tests fast and offline; full ed25519 key decode belongs to the RPC layer later.
+
+**Build environment fixes (host JDK 25):**
+- Upgraded managed Lombok 1.18.34 → 1.18.42 (JDK 23+ requires newer Lombok for annotation processing).
+- Upgraded managed Byte Buddy 1.14.19 → 1.17.8 and Mockito 5.11.0 → 5.20.0 so the inline mock maker used by `@MockBean`/`@WebMvcTest` can instrument classes on JDK 25.
+- All fixes are Maven property overrides (`lombok.version`, `byte-buddy.version`, `mockito.version`); no boot version bump needed.
