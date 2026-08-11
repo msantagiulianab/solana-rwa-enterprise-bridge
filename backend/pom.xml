@@ -47,6 +47,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- H2: embedded PostgreSQL-compatible database for @DataJpaTest integration tests -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Lombok: boilerplate reduction for DTOs and entities -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -64,6 +71,26 @@
 
     <build>
         <plugins>
+            <!--
+                Explicitly enable full annotation processing. JDK 23+ disables
+                annotation processing by default, which silently breaks Lombok
+                (no builders/getters/setters generated). Declaring Lombok on the
+                annotation processor path makes processor discovery deterministic.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <proc>full</proc>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -74,6 +101,21 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                </configuration>
+            </plugin>
+            <!--
+                Run *IT integration tests on every build (H2 / mocked RPC).
+                JPA repository tests follow the *IT.java naming convention per
+                .clinerules, so they must be included in surefire's default run.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
                 </configuration>
             </plugin>
         </plugins>

@@ -69,14 +69,17 @@ docker compose down -v    # stop + wipe volume
 | Status | Feature |
 |--------|---------|
 | 🏗 Scaffold | Spring Boot 3 backend, env-driven config, PostgreSQL via Docker Compose |
+| ✅ Done | JPA domain layer: `Investor`, `AssetToken`, `AuditLog` entities + Spring Data JPA repositories |
 
 ## Test Counts
 
 | Suite | Count |
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 0 |
-| Backend integration tests (`*IT.java`) | 0 |
+| Backend integration tests (`*IT.java`) | 20 |
 | Frontend specs | 0 |
+
+**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 
