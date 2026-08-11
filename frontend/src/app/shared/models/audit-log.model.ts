@@ -1,12 +1,10 @@
 export interface AuditLog {
-  id: number;
-  eventType: string;
-  description: string;
+  id: string;
+  walletAddress: string;
+  action: string;
   status: AuditLogStatus;
+  reason: string | null;
   timestamp: string;
-  investorId?: number;
-  assetTokenId?: number;
-  onchainTxHash?: string;
 }
 
 export type AuditLogStatus = 'SUCCESS' | 'REJECTED' | 'BLOCKED_BY_COMPLIANCE' | 'RPC_ERROR';

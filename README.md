@@ -104,7 +104,8 @@ npm start   # starts at http://localhost:4200
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/v1/investors` REST controllers, `GlobalExceptionHandler` |
 | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
 | ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 17), `render.yaml` Blueprint, CORS for Vercel origins |
-| ✅ Done | Angular frontend: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
+| ✅ Done | Angular frontend UI scaffold: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
+| ✅ Done | Angular frontend feature implementation (Phase 4.2): wallet integration (Phantom), tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter; 37 frontend specs GREEN |
 
 ## Render Deployment
 
@@ -141,7 +142,7 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 36 |
 | Backend integration tests (`*IT.java`) | 34 |
-| Frontend specs | 18 |
+| Frontend specs | 37 |
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9)
 
@@ -149,7 +150,7 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 
 
-**Breakdown (frontend):** `AppComponent` (3) · `AssetTokenizationComponent` (5) · `InvestorKycComponent` (6) · `AuditLogComponent` (4)
+**Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (9) · `SolanaWalletService` (4)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 

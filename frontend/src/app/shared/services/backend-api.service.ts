@@ -2,8 +2,8 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { AssetToken } from '../models/asset-token.model';
-import { Investor } from '../models/investor.model';
+import { AssetToken, CreateAssetTokenRequest } from '../models/asset-token.model';
+import { Investor, RegisterInvestorRequest, UpdateInvestorStatusRequest } from '../models/investor.model';
 import { AuditLog } from '../models/audit-log.model';
 
 @Injectable({
@@ -20,8 +20,12 @@ export class BackendApiService {
     return this.http.get<AssetToken[]>(`${this.baseUrl}/tokens`);
   }
 
-  getAssetTokenById(id: number): Observable<AssetToken> {
+  getAssetTokenById(id: string): Observable<AssetToken> {
     return this.http.get<AssetToken>(`${this.baseUrl}/tokens/${id}`);
+  }
+
+  createAssetToken(payload: CreateAssetTokenRequest): Observable<AssetToken> {
+    return this.http.post<AssetToken>(`${this.baseUrl}/tokens`, payload);
   }
 
   /* ---------- Investors ---------- */
@@ -30,16 +34,16 @@ export class BackendApiService {
     return this.http.get<Investor[]>(`${this.baseUrl}/investors`);
   }
 
-  getInvestorById(id: number): Observable<Investor> {
+  getInvestorById(id: string): Observable<Investor> {
     return this.http.get<Investor>(`${this.baseUrl}/investors/${id}`);
   }
 
-  registerInvestor(payload: {
-    fullName: string;
-    email: string;
-    solanaAddress: string;
-  }): Observable<Investor> {
+  registerInvestor(payload: RegisterInvestorRequest): Observable<Investor> {
     return this.http.post<Investor>(`${this.baseUrl}/investors`, payload);
+  }
+
+  updateInvestorStatus(id: string, payload: UpdateInvestorStatusRequest): Observable<Investor> {
+    return this.http.patch<Investor>(`${this.baseUrl}/investors/${id}/status`, payload);
   }
 
   /* ---------- Audit Logs ---------- */

@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { FormsModule } from '@angular/forms';
 import { AssetTokenizationComponent } from './asset-tokenization.component';
 import { environment } from '../../../environments/environment';
 import { AssetToken } from '../../shared/models/asset-token.model';
@@ -11,24 +12,20 @@ describe('AssetTokenizationComponent', () => {
 
   const mockTokens: AssetToken[] = [
     {
-      id: 1,
-      mintAddress: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-      assetName: 'Test Property Token',
-      symbol: 'TPT',
-      totalSupply: 1_000_000,
-      decimals: 9,
-      complianceStatus: 'MINTED',
+      id: 'token-uuid-1',
+      assetName: 'Luxury Real Estate Token',
+      valuationUsd: 1_000_000,
+      mintAddress: null,
+      complianceStatus: 'PENDING_KYC_APPROVAL',
       createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-01T00:00:00Z',
     },
     {
-      id: 2,
-      mintAddress: 'So11111111111111111111111111111111111111112',
-      assetName: 'Pending Asset',
-      symbol: 'PNG',
-      totalSupply: 500_000,
-      decimals: 6,
-      complianceStatus: 'PENDING_KYC_APPROVAL',
+      id: 'token-uuid-2',
+      assetName: 'Gold Bond Token',
+      valuationUsd: 500_000,
+      mintAddress: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      complianceStatus: 'MINTED',
       createdAt: '2026-08-02T00:00:00Z',
       updatedAt: '2026-08-02T00:00:00Z',
     },
@@ -36,7 +33,7 @@ describe('AssetTokenizationComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [AssetTokenizationComponent, HttpClientTestingModule],
+      imports: [AssetTokenizationComponent, HttpClientTestingModule, FormsModule],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AssetTokenizationComponent);
@@ -54,9 +51,15 @@ describe('AssetTokenizationComponent', () => {
 
   it('should display loading spinner initially', () => {
     fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/tokens`);
+    expect(req.request.method).toBe('GET');
+
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('.animate-spin')).toBeTruthy();
     expect(component.loading).toBeTrue();
+
+    req.flush(mockTokens);
   });
 
   it('should load and display asset tokens', () => {
@@ -74,7 +77,7 @@ describe('AssetTokenizationComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     const rows = compiled.querySelectorAll('tbody tr');
     expect(rows.length).toBe(2);
-    expect(rows[0].textContent).toContain('Test Property Token');
+    expect(rows[0].textContent).toContain('Luxury Real Estate Token');
   });
 
   it('should display error message on API failure', () => {
@@ -90,6 +93,67 @@ describe('AssetTokenizationComponent', () => {
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Failed to load asset tokens');
+  });
+
+  it('should open and close the tokenize modal', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/tokens`).flush([]);
+    fixture.detectChanges();
+
+    expect(component.showTokenizeModal).toBeFalse();
+
+    component.openTokenizeModal();
+    fixture.detectChanges();
+    expect(component.showTokenizeModal).toBeTrue();
+
+    component.closeTokenizeModal();
+    fixture.detectChanges();
+    expect(component.showTokenizeModal).toBeFalse();
+  });
+
+  it('should create a new asset token via POST', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/tokens`).flush([]);
+    fixture.detectChanges();
+
+    component.assetName = 'Test Token';
+    component.valuationUsd = 1000;
+
+    const newToken: AssetToken = {
+      id: 'token-uuid-3',
+      assetName: 'Test Token',
+      valuationUsd: 1000,
+      mintAddress: null,
+      complianceStatus: 'PENDING_KYC_APPROVAL',
+      createdAt: '2026-08-03T00:00:00Z',
+      updatedAt: '2026-08-03T00:00:00Z',
+    };
+
+    component.createAssetToken();
+
+    const postReq = httpMock.expectOne(`${environment.apiBaseUrl}/tokens`);
+    expect(postReq.request.method).toBe('POST');
+    expect(postReq.request.body.assetName).toBe('Test Token');
+    expect(postReq.request.body.valuationUsd).toBe(1000);
+    postReq.flush(newToken);
+
+    fixture.detectChanges();
+
+    expect(component.tokens.length).toBe(1);
+    expect(component.tokens[0].assetName).toBe('Test Token');
+    expect(component.submitSuccess).toContain('Test Token');
+  });
+
+  it('should require all fields for tokenization', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/tokens`).flush([]);
+    fixture.detectChanges();
+
+    component.assetName = '';
+    component.valuationUsd = null;
+    component.createAssetToken();
+
+    expect(component.submitError).toBe('All fields are required and valuation must be greater than 0.');
   });
 
   it('should map compliance status to correct color classes', () => {

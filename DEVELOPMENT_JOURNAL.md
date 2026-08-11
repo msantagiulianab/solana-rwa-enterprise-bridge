@@ -146,3 +146,48 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - No Angular Material — pure Tailwind utility classes for styling to keep the bundle lean.
 - All forms use Angular `FormsModule` (`[(ngModel)]`) for simplicity; reactive forms can be introduced later if complex validation needs arise.
 - Spec file IDE warnings about `describe`/`it`/`expect` are expected — these resolve at Karma runtime via `tsconfig.spec.json` jasmine types.
+
+### Phase 4.2: Angular Frontend Feature Implementation (TDD, GREEN: 37 specs)
+
+**Plan:** Wire all three feature views (`/tokens`, `/investors`, `/audit-logs`) to the Render backend API, add wallet integration with Phantom provider detection, and implement interactive forms for asset tokenization and investor KYC management — all Test-Driven with HttpTestingController and Jasmine spies.
+
+**Backend-Frontend Model Alignment:**
+- Fixed all three frontend model interfaces (`AssetToken`, `Investor`, `AuditLog`) to match actual backend entity JSON shapes:
+  - `AssetToken`: `id` string (UUID), `valuationUsd` (not `totalSupply`), `mintAddress` nullable, removed `symbol`/`decimals`.
+  - `Investor`: `id` string (UUID), `walletAddress` (not `solanaAddress`), added `country` nullable, `kycStatus`.
+  - `AuditLog`: `id` string (UUID), `walletAddress`, `action` (not `eventType`), `reason` (not `description`), `status`, removed `investorId`/`assetTokenId`/`onchainTxHash`.
+
+**Tests added (TDD — RED first, then GREEN):**
+- `SolanaWalletService` — 4 specs: creation, connectedPublicKey$ observable emission, getConnectedPublicKey initially null, isPhantomInstalled false in non-browser env.
+- `AssetTokenizationComponent` (expanded 5→8): loading spinner (fixed to flush HTTP request), token list rendering, error display, tokenize modal open/close, asset creation via POST with form validation, compliance status → color mapping (7 mappings).
+- `InvestorKycComponent` (expanded 6→8): investor list loading, field validation, successful registration, registration error, status update via PATCH (APPROVE), status update error handling, KYC status → color mapping (5 mappings).
+- `AuditLogComponent` (expanded 4→9): sorted log loading, error display, filter by action search, filter by status, combined filter, clear all filters, search in action/reason/wallet, status → badge class mapping (5 mappings).
+- `AppComponent` (expanded 3→8): creation, title, nav links, Install Phantom when not installed, Connect Wallet when installed + not connected, connected key + disconnect button, connectWallet call on click, disconnectWallet call on click.
+- `BackendApiService` — added `createAssetToken`, `updateInvestorStatus` methods; all methods use corrected model types.
+
+**Implementation — Solana Wallet Integration:**
+- `SolanaWalletService` (`providedIn: 'root'`) — injects `PLATFORM_ID` for SSR safety (`isPlatformBrowser` guard); detects `window.solana` / `window.phantom.solana`; exposes `connectedPublicKey$` as `BehaviorSubject<string | null>`; `connectWallet()` calls provider `connect()` and subscribes to `disconnect`/`accountChanged` events; `disconnectWallet()` removes listeners and resets subject; `isPhantomInstalled()` checks provider existence.
+- `AppComponent` header — conditional rendering: Phantom not installed → "Install Phantom" link to phantom.app; installed but disconnected → "Connect Wallet" button; connected → truncated public key display + "Disconnect" button. Error banner for failed connections.
+
+**Implementation — Asset Tokenization (`/tokens`):**
+- "+ Tokenize Asset" button opens a modal dialog (overlay + centered panel) with fields: Asset Name (text), Asset Value USD (number with step 0.01).
+- Client-side validation: both fields required, valuation must be > 0.
+- `createAssetToken()` POSTs `{ assetName, valuationUsd }` to `/api/tokens`; on success the new token is prepended to the list; on failure error message extracted from `err.error.message`.
+- Table columns updated: Valuation (USD) with `currency` pipe, Mint Address with "Pending..." fallback for null.
+
+**Implementation — Investor KYC (`/investors`):**
+- Registration form POSTs `{ fullName, email, solanaAddress }` to `/api/investors`; form resets on success.
+- APPROVE/REJECT action buttons in each table row with per-row loading state (`updatingInvestorId`).
+- `updateInvestorStatus()` sends PATCH `{ kycStatus: 'APPROVED'|'REJECTED' }` to `/api/investors/{id}/status`; replaces the investor object in the array on success.
+- Buttons only visible when KYC status is not already in the target state; "Final" label for already-approved/rejected investors.
+- Table column "Wallet Address" (was "Solana Address") maps `investor.walletAddress`.
+
+**Implementation — Audit Log (`/audit-logs`):**
+- Search/filter bar: text input for free-text search (matches `action`, `reason`, `walletAddress` case-insensitively) + `<select>` dropdown for status filter (SUCCESS, REJECTED, BLOCKED_BY_COMPLIANCE, RPC_ERROR, All).
+- `filteredLogs` computed from `applyFilters()` on every input/change; "Clear Filters" resets both.
+- "Showing X of Y entries" count display; separate empty states for "no data" vs "no matches".
+- Table columns: Timestamp, Action, Wallet Address (truncated with title tooltip), Reason (truncated with title tooltip), Status badge.
+
+**Build verification:**
+- `npm --prefix frontend run test` — **37/37 SUCCESS** (0 failures).
+- `npm --prefix frontend run build` — BUILD SUCCESS (3.138s). Total bundle: 313.93 KB (87.23 KB gzipped). Lazy chunks: investor-kyc (9.63 KB), asset-tokenization (8.72 KB), audit-log (6.92 KB).

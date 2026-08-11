@@ -1,10 +1,8 @@
 export interface AssetToken {
-  id: number;
-  mintAddress: string;
+  id: string;
   assetName: string;
-  symbol: string;
-  totalSupply: number;
-  decimals: number;
+  valuationUsd: number;
+  mintAddress: string | null;
   complianceStatus: AssetTokenComplianceStatus;
   createdAt: string;
   updatedAt: string;
@@ -17,3 +15,8 @@ export type AssetTokenComplianceStatus =
   | 'FROZEN'
   | 'BURNED'
   | 'REJECTED';
+
+export interface CreateAssetTokenRequest {
+  assetName: string;
+  valuationUsd: number;
+}

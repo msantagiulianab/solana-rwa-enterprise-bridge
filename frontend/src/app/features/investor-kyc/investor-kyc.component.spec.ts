@@ -12,11 +12,12 @@ describe('InvestorKycComponent', () => {
 
   const mockInvestors: Investor[] = [
     {
-      id: 1,
+      id: 'investor-uuid-1',
       fullName: 'Alice Johnson',
       email: 'alice@example.com',
-      solanaAddress: 'DRpbCBMxVnDK7maPMoGQFix5grYexXr3coWsyhEcz6iZ',
-      kycStatus: 'APPROVED',
+      walletAddress: 'DRpbCBMxVnDK7maPMoGQFix5grYexXr3coWsyhEcz6iZ',
+      kycStatus: 'PENDING',
+      country: null,
       createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-01T00:00:00Z',
     },
@@ -82,11 +83,12 @@ describe('InvestorKycComponent', () => {
     expect(postReq.request.body.fullName).toBe('Bob Smith');
 
     const newInvestor: Investor = {
-      id: 2,
+      id: 'investor-uuid-2',
       fullName: 'Bob Smith',
       email: 'bob@example.com',
-      solanaAddress: 'CvjpgaMsCNqmEH65WoFjfKep97Wvwy5uLCEiVRBUcoXH',
+      walletAddress: 'CvjpgaMsCNqmEH65WoFjfKep97Wvwy5uLCEiVRBUcoXH',
       kycStatus: 'PENDING',
+      country: null,
       createdAt: '2026-08-03T00:00:00Z',
       updatedAt: '2026-08-03T00:00:00Z',
     };
@@ -116,6 +118,53 @@ describe('InvestorKycComponent', () => {
 
     expect(component.submitError).toBe('Invalid Solana address');
     expect(component.submitting).toBeFalse();
+  });
+
+  it('should approve an investor via PATCH', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/investors`).flush(mockInvestors);
+    fixture.detectChanges();
+
+    const investor = component.investors[0];
+
+    const updatedInvestor: Investor = {
+      ...investor,
+      kycStatus: 'APPROVED',
+      updatedAt: '2026-08-04T00:00:00Z',
+    };
+
+    component.updateInvestorStatus(investor, 'APPROVED');
+
+    const patchReq = httpMock.expectOne(
+      `${environment.apiBaseUrl}/investors/${investor.id}/status`
+    );
+    expect(patchReq.request.method).toBe('PATCH');
+    expect(patchReq.request.body.kycStatus).toBe('APPROVED');
+    patchReq.flush(updatedInvestor);
+
+    fixture.detectChanges();
+
+    expect(component.investors[0].kycStatus).toBe('APPROVED');
+    expect(component.updatingInvestorId).toBeNull();
+  });
+
+  it('should handle status update error', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/investors`).flush(mockInvestors);
+    fixture.detectChanges();
+
+    const investor = component.investors[0];
+    component.updateInvestorStatus(investor, 'REJECTED');
+
+    const patchReq = httpMock.expectOne(
+      `${environment.apiBaseUrl}/investors/${investor.id}/status`
+    );
+    patchReq.flush({ message: 'Status update failed' }, { status: 500, statusText: 'Server Error' });
+
+    fixture.detectChanges();
+
+    expect(component.statusUpdateError).toBeTruthy();
+    expect(component.updatingInvestorId).toBeNull();
   });
 
   it('should map KYC status to correct color classes', () => {

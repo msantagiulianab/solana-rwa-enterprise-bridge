@@ -8,32 +8,82 @@
             Solana RWA Enterprise Bridge
           </span>
         </div>
-        <div class="flex space-x-1">
-          <a
-            routerLink="/tokens"
-            routerLinkActive="bg-solana-purple/20 text-solana-purple"
-            class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
-          >
-            Asset Tokens
-          </a>
-          <a
-            routerLink="/investors"
-            routerLinkActive="bg-solana-purple/20 text-solana-purple"
-            class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
-          >
-            Investor KYC
-          </a>
-          <a
-            routerLink="/audit-logs"
-            routerLinkActive="bg-solana-purple/20 text-solana-purple"
-            class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
-          >
-            Audit Logs
-          </a>
+
+        <div class="flex items-center space-x-3">
+          <!-- Nav Links -->
+          <div class="flex space-x-1">
+            <a
+              routerLink="/tokens"
+              routerLinkActive="bg-solana-purple/20 text-solana-purple"
+              class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+              Asset Tokens
+            </a>
+            <a
+              routerLink="/investors"
+              routerLinkActive="bg-solana-purple/20 text-solana-purple"
+              class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+              Investor KYC
+            </a>
+            <a
+              routerLink="/audit-logs"
+              routerLinkActive="bg-solana-purple/20 text-solana-purple"
+              class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+              Audit Logs
+            </a>
+          </div>
+
+          <!-- Wallet Section -->
+          <div class="ml-4 pl-4 border-l border-gray-700">
+            <!-- Connected State -->
+            <ng-container *ngIf="walletPublicKey; else connectBtn">
+              <div class="flex items-center space-x-2">
+                <span class="text-xs text-green-400 font-mono truncate max-w-[120px]" [title]="walletPublicKey">
+                  {{ walletPublicKey | slice:0:4 }}...{{ walletPublicKey | slice:-4 }}
+                </span>
+                <button
+                  (click)="disconnectWallet()"
+                  class="px-3 py-1.5 border border-red-500/40 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+            </ng-container>
+
+            <!-- Connect Button -->
+            <ng-template #connectBtn>
+              <button
+                *ngIf="isPhantomInstalled(); else installPhantom"
+                (click)="connectWallet()"
+                [disabled]="walletConnecting"
+                class="px-4 py-2 bg-solana-purple hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium text-white transition-colors"
+              >
+                {{ walletConnecting ? 'Connecting...' : 'Connect Wallet' }}
+              </button>
+              <ng-template #installPhantom>
+                <a
+                  href="https://phantom.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="px-4 py-2 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
+                >
+                  Install Phantom
+                </a>
+              </ng-template>
+            </ng-template>
+          </div>
         </div>
       </div>
     </div>
   </nav>
+
+  <!-- Wallet Error Banner -->
+  <div *ngIf="walletError" class="bg-red-900/30 border-b border-red-500/50 px-4 py-2 text-center text-sm text-red-300">
+    {{ walletError }}
+    <button (click)="walletError = null" class="ml-2 underline hover:text-red-200">Dismiss</button>
+  </div>
 
   <!-- Main Content -->
   <main class="max-w-7xl mx-auto">

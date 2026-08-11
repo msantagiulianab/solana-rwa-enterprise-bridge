@@ -54,6 +54,11 @@
     </button>
   </div>
 
+  <!-- Status Update Error Message -->
+  <div *ngIf="statusUpdateError" class="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded text-red-300">
+    {{ statusUpdateError }}
+  </div>
+
   <!-- Investors Table -->
   <h2 class="text-lg font-semibold text-white mb-4">Registered Investors ({{ investors.length }})</h2>
 
@@ -76,22 +81,46 @@
         <tr>
           <th class="px-6 py-3">Name</th>
           <th class="px-6 py-3">Email</th>
-          <th class="px-6 py-3">Solana Address</th>
+          <th class="px-6 py-3">Wallet Address</th>
           <th class="px-6 py-3">KYC Status</th>
           <th class="px-6 py-3">Registered</th>
+          <th class="px-6 py-3">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-800">
         <tr *ngFor="let investor of investors" class="bg-solana-darker hover:bg-gray-800 transition-colors">
           <td class="px-6 py-4 font-medium text-white">{{ investor.fullName }}</td>
           <td class="px-6 py-4 text-gray-300">{{ investor.email }}</td>
-          <td class="px-6 py-4 font-mono text-xs text-gray-400">{{ investor.solanaAddress }}</td>
+          <td class="px-6 py-4 font-mono text-xs text-gray-400">{{ investor.walletAddress }}</td>
           <td class="px-6 py-4">
             <span [class]="kycStatusColor(investor.kycStatus)" class="px-2 py-1 rounded-full text-xs font-semibold">
               {{ investor.kycStatus }}
             </span>
           </td>
           <td class="px-6 py-4 text-gray-400">{{ investor.createdAt | date:'short' }}</td>
+          <td class="px-6 py-4">
+            <div class="flex space-x-2">
+              <button
+                *ngIf="investor.kycStatus !== 'APPROVED'"
+                (click)="updateInvestorStatus(investor, 'APPROVED')"
+                [disabled]="updatingInvestorId === investor.id"
+                class="px-3 py-1 bg-green-600/20 border border-green-500/50 rounded text-green-400 text-xs font-medium hover:bg-green-600/30 disabled:opacity-50 transition-colors"
+              >
+                {{ updatingInvestorId === investor.id ? '...' : '✓ Approve' }}
+              </button>
+              <button
+                *ngIf="investor.kycStatus !== 'REJECTED'"
+                (click)="updateInvestorStatus(investor, 'REJECTED')"
+                [disabled]="updatingInvestorId === investor.id"
+                class="px-3 py-1 bg-red-600/20 border border-red-500/50 rounded text-red-400 text-xs font-medium hover:bg-red-600/30 disabled:opacity-50 transition-colors"
+              >
+                {{ updatingInvestorId === investor.id ? '...' : '✗ Reject' }}
+              </button>
+              <span *ngIf="investor.kycStatus === 'APPROVED' || investor.kycStatus === 'REJECTED'" class="text-xs text-gray-500">
+                Final
+              </span>
+            </div>
+          </td>
         </tr>
       </tbody>
     </table>

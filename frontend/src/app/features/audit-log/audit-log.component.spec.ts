@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { FormsModule } from '@angular/forms';
 import { AuditLogComponent } from './audit-log.component';
 import { environment } from '../../../environments/environment';
 import { AuditLog } from '../../shared/models/audit-log.model';
@@ -11,29 +12,34 @@ describe('AuditLogComponent', () => {
 
   const mockLogs: AuditLog[] = [
     {
-      id: 1,
-      eventType: 'INVESTOR_REGISTERED',
-      description: 'Investor Alice Johnson registered with KYC status PENDING.',
+      id: 'log-uuid-1',
+      walletAddress: 'DRpbCBMxVnDK7maPMoGQFix5grYexXr3coWsyhEcz6iZ',
+      action: 'INVESTOR_REGISTERED',
       status: 'SUCCESS',
+      reason: 'Investor Alice Johnson registered with KYC status PENDING.',
       timestamp: '2026-08-01T10:00:00Z',
-      investorId: 1,
-      onchainTxHash: null,
     },
     {
-      id: 2,
-      eventType: 'MINT_ATTEMPT',
-      description: 'Mint of TPT token blocked by compliance: investor KYC not approved.',
+      id: 'log-uuid-2',
+      walletAddress: 'CvjpgaMsCNqmEH65WoFjfKep97Wvwy5uLCEiVRBUcoXH',
+      action: 'MINT_ATTEMPT',
       status: 'BLOCKED_BY_COMPLIANCE',
+      reason: 'Mint blocked by compliance: investor KYC not approved.',
       timestamp: '2026-08-01T10:05:00Z',
-      investorId: 2,
-      assetTokenId: 1,
-      onchainTxHash: null,
+    },
+    {
+      id: 'log-uuid-3',
+      walletAddress: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      action: 'RPC_CALL',
+      status: 'RPC_ERROR',
+      reason: 'Solana RPC timeout after 3 retries.',
+      timestamp: '2026-08-01T09:55:00Z',
     },
   ];
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [AuditLogComponent, HttpClientTestingModule],
+      imports: [AuditLogComponent, HttpClientTestingModule, FormsModule],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AuditLogComponent);
@@ -59,10 +65,11 @@ describe('AuditLogComponent', () => {
     fixture.detectChanges();
 
     expect(component.loading).toBeFalse();
-    expect(component.logs.length).toBe(2);
-    // BLOCKED_BY_COMPLIANCE has later timestamp, so it should be first after sort
-    expect(component.logs[0].eventType).toBe('MINT_ATTEMPT');
-    expect(component.logs[1].eventType).toBe('INVESTOR_REGISTERED');
+    expect(component.logs.length).toBe(3);
+    // Latest timestamp first after sort
+    expect(component.filteredLogs[0].action).toBe('MINT_ATTEMPT');
+    expect(component.filteredLogs[1].action).toBe('INVESTOR_REGISTERED');
+    expect(component.filteredLogs[2].action).toBe('RPC_CALL');
   });
 
   it('should display error message on API failure', () => {
@@ -78,6 +85,76 @@ describe('AuditLogComponent', () => {
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Failed to load audit logs');
+  });
+
+  it('should filter logs by action search', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    fixture.detectChanges();
+
+    component.searchAction = 'MINT';
+    component.applyFilters();
+
+    expect(component.filteredLogs.length).toBe(1);
+    expect(component.filteredLogs[0].action).toBe('MINT_ATTEMPT');
+  });
+
+  it('should filter logs by status', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    fixture.detectChanges();
+
+    component.filterStatus = 'SUCCESS';
+    component.applyFilters();
+
+    expect(component.filteredLogs.length).toBe(1);
+    expect(component.filteredLogs[0].status).toBe('SUCCESS');
+  });
+
+  it('should filter logs by search and status combined', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    fixture.detectChanges();
+
+    component.searchAction = 'rpc';
+    component.filterStatus = 'RPC_ERROR';
+    component.applyFilters();
+
+    expect(component.filteredLogs.length).toBe(1);
+    expect(component.filteredLogs[0].action).toBe('RPC_CALL');
+  });
+
+  it('should clear all filters', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    fixture.detectChanges();
+
+    component.searchAction = 'something';
+    component.filterStatus = 'SUCCESS';
+    component.applyFilters();
+
+    component.clearFilters();
+
+    expect(component.searchAction).toBe('');
+    expect(component.filterStatus).toBe('');
+    expect(component.filteredLogs.length).toBe(3);
+  });
+
+  it('should search in action, reason, and wallet address', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    fixture.detectChanges();
+
+    // Search by wallet address
+    component.searchAction = 'Cvjpga';
+    component.applyFilters();
+    expect(component.filteredLogs.length).toBe(1);
+
+    // Search by reason
+    component.searchAction = 'timeout';
+    component.applyFilters();
+    expect(component.filteredLogs.length).toBe(1);
+    expect(component.filteredLogs[0].status).toBe('RPC_ERROR');
   });
 
   it('should map status to correct badge classes', () => {
