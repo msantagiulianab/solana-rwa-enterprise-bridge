@@ -6,6 +6,7 @@ import com.solana.rwa.bridge.entity.AuditLog;
 import com.solana.rwa.bridge.service.ComplianceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +21,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/compliance")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class ComplianceController {
 
