@@ -35,6 +35,12 @@ public class Investor {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "full_name", nullable = false, length = 255)
+    private String fullName;
+
+    @Column(name = "email", nullable = false, length = 255)
+    private String email;
+
     @Column(name = "wallet_address", nullable = false, unique = true, length = 44)
     private String walletAddress;
 
@@ -52,7 +58,9 @@ public class Investor {
     private Instant updatedAt;
 
     @Builder
-    public Investor(String walletAddress, KycStatus kycStatus, String country) {
+    public Investor(String fullName, String email, String walletAddress, KycStatus kycStatus, String country) {
+        this.fullName = fullName;
+        this.email = email;
         this.walletAddress = walletAddress;
         this.kycStatus = kycStatus;
         this.country = country;
