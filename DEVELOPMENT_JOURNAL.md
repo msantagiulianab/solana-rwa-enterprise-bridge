@@ -112,3 +112,37 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Multi-stage build separates JDK (for compilation) from JRE (for runtime), minimizing image size and attack surface.
 - `HEALTHCHECK` depends on Spring Boot Actuator being available; the `spring-boot-starter-web` dependency transitively includes actuator basics.
 - CORS uses `allowedOriginPatterns` (not `allowedOrigins`) to support wildcard subdomain matching for `*.vercel.app`.
+
+### Phase 4: Angular Frontend UI Scaffold (BUILD VERIFIED: 0 errors)
+
+**Plan:** Initialize an Angular 17+ standalone-component application under `frontend/` with Tailwind CSS, `@solana/web3.js` for browser wallet interactions, and three lazy-loaded feature views: Asset Tokenization Dashboard, Investor KYC Management, and Audit Log Viewer.
+
+**Tests added (4 spec files, TDD-style):**
+- `AppComponent` — 3 specs: creates the app, has correct title, renders 3 nav links (Asset Tokens / Investor KYC / Audit Logs).
+- `AssetTokenizationComponent` — 5 specs: loading spinner, token list rendering, error display, compliance status → color mapping (7 mappings).
+- `InvestorKycComponent` — 6 specs: investor list loading, form validation (all fields required), successful registration + form reset, registration error handling, KYC status → color mapping (5 mappings).
+- `AuditLogComponent` — 4 specs: log loading sorted by timestamp descending, error display, status → badge class mapping (5 mappings).
+
+**Architecture:**
+- Angular 17.3 standalone components throughout (no `NgModule`).
+- Lazy-loaded routing: `/tokens`, `/investors`, `/audit-logs` each load their feature chunk on demand.
+- `BackendApiService` (`providedIn: 'root'`) — centralized HTTP client hitting the Render backend (`https://solana-rwa-enterprise-bridge.onrender.com/api` via `environment.apiBaseUrl`).
+- Component tests use `HttpTestingController` for full HTTP mocking (zero live backend calls during test runs).
+- Dark theme UI with custom Solana color palette (`solana-purple: #9945FF`, `solana-green: #14F195`) via tailwind.config.js.
+- `environment.ts` (production) points to Render; `environment.development.ts` points to `http://localhost:8080/api`.
+- File replacements wired in `angular.json` for dev mode swapping.
+
+**Tailwind CSS:**
+- v3.4.x with PostCSS + Autoprefixer.
+- Custom scrollbar styling for dark theme.
+- Inter / JetBrains Mono font families.
+
+**Build verification:**
+- `npm --prefix frontend run build` — BUILD SUCCESS, 3.107s. Total initial bundle 301.85 KB (84.33 KB gzipped). Lazy chunks: investor-kyc (25.61 KB), asset-tokenization (4.08 KB), audit-log (4.08 KB).
+- Zero TypeScript compilation errors.
+
+**Decisions:**
+- `@solana/web3.js` dependency added to package.json for future browser wallet interactions (connect, sign, send transactions) — not wired into any component yet.
+- No Angular Material — pure Tailwind utility classes for styling to keep the bundle lean.
+- All forms use Angular `FormsModule` (`[(ngModel)]`) for simplicity; reactive forms can be introduced later if complex validation needs arise.
+- Spec file IDE warnings about `describe`/`it`/`expect` are expected — these resolve at Karma runtime via `tsconfig.spec.json` jasmine types.

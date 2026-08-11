@@ -68,6 +68,33 @@ docker compose down       # stop (data persists)
 docker compose down -v    # stop + wipe volume
 ```
 
+## Frontend (Angular 17+ / TypeScript)
+
+Located in [`frontend/`](frontend/).
+
+| Area | Choice |
+|------|--------|
+| Framework | Angular 17.3 (Standalone Components, no NgModule) |
+| Styling | Tailwind CSS 3.4 (PostCSS + Autoprefixer) |
+| Web3 | `@solana/web3.js` (browser wallet interactions) |
+| API | Render backend at `https://solana-rwa-enterprise-bridge.onrender.com/api` |
+
+### Run locally
+
+```bash
+cd frontend
+npm install
+npm start   # starts at http://localhost:4200
+```
+
+### Routes
+
+| Path | Component | Purpose |
+|------|-----------|---------|
+| `/tokens` | `AssetTokenizationComponent` | Asset token dashboard |
+| `/investors` | `InvestorKycComponent` | Investor KYC registration & management |
+| `/audit-logs` | `AuditLogComponent` | Immutable audit trail viewer |
+
 ## Feature Status
 
 | Status | Feature |
@@ -77,6 +104,7 @@ docker compose down -v    # stop + wipe volume
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/v1/investors` REST controllers, `GlobalExceptionHandler` |
 | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
 | ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 17), `render.yaml` Blueprint, CORS for Vercel origins |
+| ✅ Done | Angular frontend: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
 
 ## Render Deployment
 
@@ -113,12 +141,15 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 36 |
 | Backend integration tests (`*IT.java`) | 34 |
-| Frontend specs | 0 |
+| Frontend specs | 18 |
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9)
 
 **Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (8) · `InvestorControllerIT` (6)
 
+
+
+**Breakdown (frontend):** `AppComponent` (3) · `AssetTokenizationComponent` (5) · `InvestorKycComponent` (6) · `AuditLogComponent` (4)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 

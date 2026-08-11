@@ -1,0 +1,49 @@
+<div class="min-h-screen bg-[#0f0f1a]">
+  <!-- Navigation Header -->
+  <nav class="bg-solana-dark border-b border-gray-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center space-x-3">
+          <span class="text-xl font-bold text-white tracking-tight">
+            Solana RWA Enterprise Bridge
+          </span>
+        </div>
+        <div class="flex space-x-1">
+          <a
+            routerLink="/tokens"
+            routerLinkActive="bg-solana-purple/20 text-solana-purple"
+            class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            Asset Tokens
+          </a>
+          <a
+            routerLink="/investors"
+            routerLinkActive="bg-solana-purple/20 text-solana-purple"
+            class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            Investor KYC
+          </a>
+          <a
+            routerLink="/audit-logs"
+            routerLinkActive="bg-solana-purple/20 text-solana-purple"
+            class="px-4 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            Audit Logs
+          </a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto">
+    <router-outlet></router-outlet>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-800 mt-12 py-6">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-gray-500">
+      Solana RWA Enterprise Bridge &mdash; Phase 4 (Angular Frontend) &mdash; Devnet
+    </div>
+  </footer>
+</div>
