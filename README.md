@@ -10,11 +10,12 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 │  (standalone, RxJS,       │ ───────► │  - Compliance Gatekeeper     │
 │   Tailwind CSS)           │          │  - Audit Logs (immutable)    │
 └────────────────────────────┘          │  - Idempotency keys          │
-                                        │  - SolanaRpcService (mock)   │
-                                        │           │  JSON-RPC        │
+                                        │  - SolanaRpcAdapter (JSON-RPC)│
+                                        │           │                  │
                                         │           ▼                  │
                                         │  PostgreSQL  │  Solana Devnet │
                                         └──────────────┴───────────────┘
+
 ```
 
 ## Backend (Spring Boot 3 / Java 17)
@@ -74,18 +75,21 @@ docker compose down -v    # stop + wipe volume
 | 🏗 Scaffold | Spring Boot 3 backend, env-driven config, PostgreSQL via Docker Compose |
 | ✅ Done | JPA domain layer: `Investor`, `AssetToken`, `AuditLog` entities + Spring Data JPA repositories |
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/v1/investors` REST controllers, `GlobalExceptionHandler` |
+| ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
+
 
 ## Test Counts
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 23 |
+| Backend unit tests (`*Test.java`) | 36 |
 | Backend integration tests (`*IT.java`) | 34 |
 | Frontend specs | 0 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (11) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9)
 
 **Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (8) · `InvestorControllerIT` (6)
+
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 

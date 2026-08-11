@@ -8,9 +8,11 @@ import com.solana.rwa.bridge.entity.AuditLogStatus;
 import com.solana.rwa.bridge.entity.Investor;
 import com.solana.rwa.bridge.entity.KycStatus;
 import com.solana.rwa.bridge.exception.InvestorNotFoundException;
+import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.repository.AssetTokenRepository;
 import com.solana.rwa.bridge.repository.AuditLogRepository;
 import com.solana.rwa.bridge.repository.InvestorRepository;
+import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,10 @@ import java.util.List;
  * Off-chain compliance gatekeeper. Performs the eligibility check BEFORE any
  * Solana RPC dispatch and writes an immutable audit log entry for EVERY check
  * (approved or blocked), per the enterprise auditability rule.
+ *
+ * <p>Once the off-chain KYC/asset checks pass, the on-chain wallet existence
+ * is verified through the {@link SolanaRpcAdapter} (fail-closed: an RPC outage
+ * blocks the decision rather than silently approving).
  */
 @Service
 @RequiredArgsConstructor
@@ -32,6 +38,7 @@ public class ComplianceService {
     private final InvestorRepository investorRepository;
     private final AssetTokenRepository assetTokenRepository;
     private final AuditLogRepository auditLogRepository;
+    private final SolanaRpcAdapter solanaRpcAdapter;
 
     /**
      * Evaluates whether an investor is eligible to transact with an asset token.
@@ -40,7 +47,8 @@ public class ComplianceService {
      * <ul>
      *   <li>BLOCKED — investor not registered, REJECTED, FLAGGED_SANCTION, or not VERIFIED</li>
      *   <li>BLOCKED — asset token not registered or NON_COMPLIANT</li>
-     *   <li>APPROVED — investor VERIFIED and asset COMPLIANT</li>
+     *   <li>BLOCKED — wallet does not exist on-chain, or the RPC layer is unavailable</li>
+     *   <li>APPROVED — investor VERIFIED, asset COMPLIANT, and wallet exists on-chain</li>
      * </ul>
      */
     @Transactional
@@ -77,6 +85,22 @@ public class ComplianceService {
             return auditAndRespond(walletAddress, false,
                     "Asset token is not compliant (status: " + token.getComplianceStatus() + ")",
                     KycStatus.VERIFIED, token.getComplianceStatus());
+        }
+
+        // On-chain verification: confirm the investor's wallet actually exists on
+        // Solana Devnet BEFORE approving. RPC failures fail closed (BLOCKED), never
+        // silently approve. SolanaRpcException is caught so a network outage is
+        // surfaced as a compliance decision rather than a 500.
+        try {
+            if (!solanaRpcAdapter.getAccountInfo(walletAddress).exists()) {
+                return auditAndRespond(walletAddress, false,
+                        "Wallet does not exist on Solana chain",
+                        KycStatus.VERIFIED, AssetTokenComplianceStatus.COMPLIANT);
+            }
+        } catch (SolanaRpcException ex) {
+            return auditAndRespond(walletAddress, false,
+                    "Solana RPC unavailable - on-chain verification failed",
+                    KycStatus.VERIFIED, AssetTokenComplianceStatus.COMPLIANT);
         }
 
         return auditAndRespond(walletAddress, true,

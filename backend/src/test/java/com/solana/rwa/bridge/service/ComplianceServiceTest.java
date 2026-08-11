@@ -8,9 +8,12 @@ import com.solana.rwa.bridge.entity.AuditLogStatus;
 import com.solana.rwa.bridge.entity.Investor;
 import com.solana.rwa.bridge.entity.KycStatus;
 import com.solana.rwa.bridge.exception.InvestorNotFoundException;
+import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.repository.AssetTokenRepository;
 import com.solana.rwa.bridge.repository.AuditLogRepository;
 import com.solana.rwa.bridge.repository.InvestorRepository;
+import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
+import com.solana.rwa.bridge.rpc.dto.AccountInfo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -33,13 +36,16 @@ import static org.mockito.Mockito.when;
  * Pure Mockito unit tests for {@link ComplianceService} business rules.
  *
  * <p>Every eligibility check MUST produce an audit log entry (APPROVED or
- * BLOCKED) regardless of the outcome. No RPC calls are involved here.
+ * BLOCKED) regardless of the outcome. Once the off-chain KYC/asset checks
+ * pass, the on-chain Solana RPC layer is consulted (mocked here, never a
+ * live Devnet call during the build).
  */
 @ExtendWith(MockitoExtension.class)
 class ComplianceServiceTest {
 
     private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
     private static final String MINT = "MNTabcdefghijkmnpqrstuvwxyz123456789";
+    private static final String SYSTEM_OWNER = "11111111111111111111111111111111";
 
     @Mock
     private InvestorRepository investorRepository;
@@ -49,6 +55,9 @@ class ComplianceServiceTest {
 
     @Mock
     private AuditLogRepository auditLogRepository;
+
+    @Mock
+    private SolanaRpcAdapter solanaRpcAdapter;
 
     @InjectMocks
     private ComplianceService complianceService;
@@ -70,6 +79,10 @@ class ComplianceServiceTest {
                 .build();
     }
 
+    private AccountInfo onChainAccount() {
+        return new AccountInfo(SYSTEM_OWNER, 5_000_000L, false, 80L);
+    }
+
     // ------------------------------------------------------------------
     // Business rules
     // ------------------------------------------------------------------
@@ -80,6 +93,7 @@ class ComplianceServiceTest {
                 .thenReturn(Optional.of(investor(KycStatus.VERIFIED)));
         when(assetTokenRepository.findByMintAddress(MINT))
                 .thenReturn(Optional.of(token(AssetTokenComplianceStatus.COMPLIANT)));
+        when(solanaRpcAdapter.getAccountInfo(WALLET)).thenReturn(onChainAccount());
 
         ComplianceCheckResponse response = complianceService.verifyEligibility(WALLET, MINT);
 
@@ -181,6 +195,7 @@ class ComplianceServiceTest {
                 .thenReturn(Optional.of(investor(KycStatus.VERIFIED)));
         when(assetTokenRepository.findByMintAddress(MINT))
                 .thenReturn(Optional.of(token(AssetTokenComplianceStatus.COMPLIANT)));
+        when(solanaRpcAdapter.getAccountInfo(WALLET)).thenReturn(onChainAccount());
 
         complianceService.verifyEligibility(WALLET, MINT);
 
@@ -245,5 +260,64 @@ class ComplianceServiceTest {
                 .isInstanceOf(InvestorNotFoundException.class)
                 .hasMessageContaining(WALLET);
         verifyNoInteractions(auditLogRepository);
+    }
+
+    // ------------------------------------------------------------------
+    // On-chain RPC gatekeeping (after off-chain checks pass)
+    // ------------------------------------------------------------------
+
+    @Test
+    void verifyEligibility_blocksWhenWalletDoesNotExistOnChain() {
+        when(investorRepository.findByWalletAddress(WALLET))
+                .thenReturn(Optional.of(investor(KycStatus.VERIFIED)));
+        when(assetTokenRepository.findByMintAddress(MINT))
+                .thenReturn(Optional.of(token(AssetTokenComplianceStatus.COMPLIANT)));
+        when(solanaRpcAdapter.getAccountInfo(WALLET)).thenReturn(new AccountInfo(null, 0L, false, 0L));
+
+        ComplianceCheckResponse response = complianceService.verifyEligibility(WALLET, MINT);
+
+        assertThat(response.isAllowed()).isFalse();
+        assertThat(response.getReason()).isEqualTo("Wallet does not exist on Solana chain");
+        assertThat(response.getInvestorStatus()).isEqualTo(KycStatus.VERIFIED);
+        assertThat(response.getAssetStatus()).isEqualTo(AssetTokenComplianceStatus.COMPLIANT);
+    }
+
+    @Test
+    void verifyEligibility_blocksWhenSolanaRpcUnavailable() {
+        when(investorRepository.findByWalletAddress(WALLET))
+                .thenReturn(Optional.of(investor(KycStatus.VERIFIED)));
+        when(assetTokenRepository.findByMintAddress(MINT))
+                .thenReturn(Optional.of(token(AssetTokenComplianceStatus.COMPLIANT)));
+        when(solanaRpcAdapter.getAccountInfo(WALLET))
+                .thenThrow(new SolanaRpcException("getAccountInfo", new RuntimeException("Read timed out")));
+
+        ComplianceCheckResponse response = complianceService.verifyEligibility(WALLET, MINT);
+
+        assertThat(response.isAllowed()).isFalse();
+        assertThat(response.getReason()).isEqualTo("Solana RPC unavailable - on-chain verification failed");
+        assertThat(response.getInvestorStatus()).isEqualTo(KycStatus.VERIFIED);
+        assertThat(response.getAssetStatus()).isEqualTo(AssetTokenComplianceStatus.COMPLIANT);
+    }
+
+    @Test
+    void verifyEligibility_doesNotCallRpcWhenInvestorRejected() {
+        when(investorRepository.findByWalletAddress(WALLET))
+                .thenReturn(Optional.of(investor(KycStatus.REJECTED)));
+
+        complianceService.verifyEligibility(WALLET, MINT);
+
+        verifyNoInteractions(solanaRpcAdapter);
+    }
+
+    @Test
+    void verifyEligibility_doesNotCallRpcWhenAssetNonCompliant() {
+        when(investorRepository.findByWalletAddress(WALLET))
+                .thenReturn(Optional.of(investor(KycStatus.VERIFIED)));
+        when(assetTokenRepository.findByMintAddress(MINT))
+                .thenReturn(Optional.of(token(AssetTokenComplianceStatus.NON_COMPLIANT)));
+
+        complianceService.verifyEligibility(WALLET, MINT);
+
+        verifyNoInteractions(solanaRpcAdapter);
     }
 }

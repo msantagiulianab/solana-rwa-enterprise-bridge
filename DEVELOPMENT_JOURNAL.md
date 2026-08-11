@@ -4,7 +4,32 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 
 ## 2026-08-11
 
+### Solana Devnet RPC Integration Layer (TDD, GREEN: 70 tests)
+
+**Plan:** Implement a resilient JSON-RPC client (`SolanaRpcAdapter`) that reads `SOLANA_DEVNET_RPC_URL` from configuration and queries live Devnet state (`getAccountInfo`, `getTokenAccountBalance`), then integrate on-chain wallet existence verification into the compliance gatekeeper — all with pure Mockito unit tests that never touch the network during the build.
+
+**Tests added (written first — RED → GREEN):**
+- `SolanaRpcAdapterTest` (9, pure Mockito): successful `getAccountInfo` response parsing (owner/lamports/executable/space), absent wallet returns a non-existent `AccountInfo`, JSON-RPC error payload → `SolanaRpcException`, null/malformed response → `SolanaRpcException`, network timeout (`ResourceAccessException`) → `SolanaRpcException`, HTTP 502 → `SolanaRpcException`, successful `getTokenAccountBalance` parsing (amount/decimals/uiAmountString), missing token account → `SolanaRpcException`, JSON-RPC error payload on token query → `SolanaRpcException`. The `RestClient` fluent chain (`post().uri().contentType().body().retrieve().body(...)`) is fully mocked with Mockito — no live Devnet traffic is ever attempted.
+- `ComplianceServiceTest` expanded 11 → 15: BLOCKED when wallet does not exist on-chain; BLOCKED (fail-closed) when the RPC layer is unavailable; RPC layer is **never** consulted when investor is REJECTED or asset is NON_COMPLIANT.
+
+**Implementation:**
+- `SolanaRpcAdapter` (`rpc` package) — Spring `@Service` wrapping a Spring 6.1 `RestClient`. Endpoint injected from `solana.rpc.url` (`${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}`). Methods: `getAccountInfo(walletAddress)` and `getTokenAccountBalance(tokenAccountAddress)`. Every interaction is wrapped in try-catch:
+  - `ResourceAccessException` (timeout / unreachable) → `SolanaRpcException`
+  - `RestClientResponseException` (HTTP error) → `SolanaRpcException`
+  - null/malformed JSON-RPC envelope → `SolanaRpcException`
+  - JSON-RPC `error` payload → `SolanaRpcException`
+  - missing token account (`value == null`) → `SolanaRpcException`
+- JSON-RPC DTO records (`rpc/dto`): `RpcEnvelope<T>` (with `hasError()`/`isMalformed()`), `RpcError`, `RpcContext`, `AccountInfo` (with `exists()`), `AccountInfoResult`, `TokenAccountBalance`, `TokenAccountBalanceResult` — all `@JsonIgnoreProperties(ignoreUnknown = true)`.
+- `SolanaRpcException` — custom runtime exception with method-aware message constructors; treated as fail-closed by callers.
+
+**Decisions:**
+- **Fail-closed integration:** `ComplianceService.verifyEligibility` now calls `solanaRpcAdapter.getAccountInfo(walletAddress).exists()` only AFTER all off-chain KYC/asset checks pass. If the wallet does not exist, or the RPC layer throws `SolanaRpcException`, the check is BLOCKED and audit-logged — never silently approved.
+- **Off-chain gatekeeping preserved:** the RPC layer is never invoked for investors that are not `VERIFIED` or assets that are not `COMPLIANT` (asserted via `verifyNoInteractions(solanaRpcAdapter)`).
+- **Mockito strictness fix:** stubbing `RestClient.RequestBodySpec.body(any())` binds to the `body(MultiValueMap)` overload (null literal), causing `PotentialStubbingProblem` when the adapter calls `body(Object)`. Fixed with `doReturn(bodySpec).when(bodySpec).body(any(Object.class))` to bind the correct overload.
+- Every RPC attempt/decision remains audit-logged per the immutable audit trail rule.
+
 ### Scaffold: Spring Boot 3 Backend & Local PostgreSQL
+
 
 **Decisions:**
 - Established a Maven multi-layer backend under `backend/` with Java 17 + Spring Boot 3.3.x.
