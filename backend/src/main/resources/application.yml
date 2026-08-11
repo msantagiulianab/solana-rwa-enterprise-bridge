@@ -40,3 +40,15 @@ solana:
   rpc:
     url: ${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}
     private-key: ${SOLANA_DEVNET_PRIVATE_KEY:}
+
+# ------------------------------------------------------------------
+# Spring Boot Actuator – health & info endpoints for monitoring.
+# ------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: always
