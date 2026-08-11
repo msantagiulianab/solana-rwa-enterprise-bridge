@@ -10,6 +10,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Allows cross-origin requests from:
  * <ul>
  *   <li>Vercel preview and production deployments ({@code https://*.vercel.app})</li>
+ *   <li>Render preview and production deployments ({@code https://*.onrender.com})</li>
  *   <li>Angular local development server ({@code http://localhost:4200})</li>
  * </ul>
  * This replaces {@code @CrossOrigin} annotations on individual controllers
@@ -23,9 +24,10 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOriginPatterns(
                         "https://*.vercel.app",
+                        "https://*.onrender.com",
                         "http://localhost:4200"
                 )
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true)
                 .maxAge(3600);
