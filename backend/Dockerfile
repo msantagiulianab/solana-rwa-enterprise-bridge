@@ -1,5 +1,5 @@
 # ---- Build Stage ----
-FROM eclipse-temurin:17-jdk-jammy AS builder
+FROM eclipse-temurin:21-jdk-jammy AS builder
 
 WORKDIR /workspace
 
@@ -21,7 +21,7 @@ COPY src ./src
 RUN ./mvnw package -DskipTests -B
 
 # ---- Runtime Stage ----
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 

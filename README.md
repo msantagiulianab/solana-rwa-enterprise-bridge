@@ -6,7 +6,7 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 
 ```
 ┌──────────────────────────────────────┐       HTTP       ┌─────────────────────────────────┐
-│  Angular 17.3 Frontend               │ ───────────────► │  Spring Boot 3.3 Backend (Java 17) │
+│  Angular 18 Frontend                 │ ───────────────► │  Spring Boot 3.5 Backend (Java 21) │
 │  (standalone, Tailwind CSS,          │                  │  - Compliance Gatekeeper          │
 │   @solana/web3.js, Phantom wallet)   │                  │  - Audit Logs (immutable)         │
 │  ── Hosted on Vercel                │                  │  - Idempotency keys               │
@@ -31,8 +31,8 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 
 | Layer | Technology | Hosting |
 |-------|-----------|---------|
-| Frontend | Angular 17.3 (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app) |
-| Backend | Spring Boot 3.3, Java 17, Spring Data JPA, Lombok | [Render](https://solana-rwa-enterprise-bridge.onrender.com/api) |
+| Frontend | Angular 18 (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app) |
+| Backend | Spring Boot 3.5, Java 21, Spring Data JPA, Lombok | [Render](https://solana-rwa-enterprise-bridge.onrender.com/api) |
 | Database | PostgreSQL (Neon Serverless – production; Docker PostgreSQL 16 – local dev) | Neon / Docker |
 | Blockchain | Solana Devnet JSON-RPC (SolanaRpcAdapter with pure Mockito unit tests) | api.devnet.solana.com |
 
@@ -60,13 +60,13 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 | `/investors` | `InvestorKycComponent` | Investor KYC registration, APPROVE/REJECT management |
 | `/audit-logs` | `AuditLogComponent` | Immutable audit trail viewer with search & status filters |
 
-## Backend (Spring Boot 3 / Java 17)
+## Backend (Spring Boot 3.5 / Java 21)
 
 Located in [`backend/`](backend/).
 
 | Area | Choice |
 |------|--------|
-| Build | Maven (Java 17, Spring Boot 3.3.x) |
+| Build | Maven (Java 21, Spring Boot 3.5.x) |
 | Dependencies | Spring Web, Spring Data JPA, PostgreSQL Driver, Lombok, Bean Validation |
 | Database (local) | PostgreSQL 16 via `docker-compose.yml` |
 | Database (production) | Neon Serverless PostgreSQL |
@@ -112,13 +112,13 @@ docker compose down       # stop (data persists)
 docker compose down -v    # stop + wipe volume
 ```
 
-## Frontend (Angular 17.3 / TypeScript)
+## Frontend (Angular 18 / TypeScript)
 
 Located in [`frontend/`](frontend/).
 
 | Area | Choice |
 |------|--------|
-| Framework | Angular 17.3 (Standalone Components, no NgModule) |
+| Framework | Angular 18 (Standalone Components, no NgModule) |
 | Styling | Tailwind CSS 3.4 (PostCSS + Autoprefixer) |
 | Web3 | `@solana/web3.js` (Phantom browser wallet integration) |
 | API | Render backend at `https://solana-rwa-enterprise-bridge.onrender.com/api` |
@@ -154,7 +154,7 @@ The `vercel.json` at the frontend root configures SPA rewrites (`/(.*)` → `/in
 | ✅ Done | JPA domain layer: `Investor`, `AssetToken`, `AuditLog` entities + Spring Data JPA repositories |
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/investors` REST controllers, `GlobalExceptionHandler` |
 | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
-| ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 17), `render.yaml` Blueprint, CORS for Vercel origins |
+| ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 21), `render.yaml` Blueprint, CORS for Vercel origins |
 | ✅ Done | Angular frontend UI scaffold: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
 | ✅ Done | Angular frontend feature implementation (Phase 4.2): Phantom wallet integration, tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter; 37 frontend specs GREEN |
 | ✅ Done | Vercel production deployment: SPA hosting with `vercel.json` rewrites, Angular build → `frontend/dist/frontend/` |
@@ -165,7 +165,7 @@ The `vercel.json` at the frontend root configures SPA rewrites (`/(.*)` → `/in
 
 The repo includes a [`render.yaml`](render.yaml) Blueprint at the root and a multi-stage [`backend/Dockerfile`](backend/Dockerfile). Connect the repository to [Render](https://render.com) and the Blueprint will auto-provision:
 
-- **Web Service `solana-rwa-bridge-api`** — Docker runtime, JRE 17, region `ohio`, healthcheck at `/actuator/health`
+- **Web Service `solana-rwa-bridge-api`** — Docker runtime, JRE 21, region `ohio`, healthcheck at `/actuator/health`
 
 ### Required Environment Variables (set in the Render dashboard)
 
@@ -194,12 +194,12 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 | Suite | Count |
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 41 |
-| Backend integration tests (`*IT.java`) | 37 |
+| Backend integration tests (`*IT.java`) | 41 |
 | Frontend specs | 39 |
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9) · `ApiKeyAuthInterceptorTest` (5)
 
-**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (7)
+**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (7) · `AssetTokenControllerIT` (4)
 
 **Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (9) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 

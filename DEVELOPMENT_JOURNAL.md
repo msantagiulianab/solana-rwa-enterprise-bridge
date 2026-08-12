@@ -323,3 +323,44 @@ both test suites.
   mutating routes are gated, matching the security baseline.
 - The frontend `apiKey` must be supplied at build/deploy time (Vercel env var); committing a real
   key would violate the private-key/secret rule, so the checked-in default is empty.
+
+---
+
+### Post-Phase 5 (Step 2): Modernization & Version Upgrades (GREEN: 82 backend + 39 frontend)
+
+**Plan:** On `feature/framework-upgrades`, modernize the stack to Java 21, Spring Boot 3.5.x, and
+Angular 18+, then re-verify both test suites for regressions.
+
+**Java 21 LTS upgrade:**
+- Bumped `backend/pom.xml` `<java.version>` → `21` and set `maven-compiler-plugin` `<release>${java.version}</release>`.
+- Updated `backend/Dockerfile` base images `eclipse-temurin:17-*` → `eclipse-temurin:21-jdk-jammy` / `21-jre-jammy`.
+
+**Spring Boot modernization:**
+- Bumped `spring-boot-starter-parent` `3.3.5` → `3.5.16` (latest stable 3.x at time of writing).
+- Migrated `@MockBean` → `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean`)
+  in the three controller integration tests, since Spring Boot 3.5 dropped `@MockBean`.
+- Kept the `lombok.version`/`byte-buddy.version`/`mockito.version` property overrides so the build
+  still instruments classes on JDK 25 (host JDK).
+
+**Angular modernization:**
+- Bumped all Angular packages (`@angular/*`, `@angular-devkit/build-angular`, `@angular/cli`,
+  `@angular/compiler-cli`) from `^17.3.x` to `^18.2.x` in `frontend/package.json`.
+- Added an npm `overrides` entry forcing `lmdb` to `3.5.6`. Angular 18's `@angular/build` pins
+  `lmdb@3.0.13`, which has no `win32-arm64` native prebuilt (the dev host is Windows-on-ARM64); the
+  override supplies the platform binary and unblocks `npm install`.
+
+**Solana/Web3 compatibility:**
+- `@solana/web3.js` remains `^1.98.4`; its `@noble/curves`, `@noble/hashes`, `bs58`, `buffer`, and
+  `rpc-websockets` dependencies are intact and compatible with the Angular 18 + Node 24 build tooling.
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml clean test` → **82 tests, 0 failures, 0 errors**
+  (41 unit + 41 integration on Java 21 target, Spring Boot 3.5.16).
+- Frontend: `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **39/39 SUCCESS**.
+
+**Decisions:**
+- The `lmdb` override is a Windows-ARM64-local-dev accommodation; it stays scoped to the frontend
+  manifest and does not affect the x64/CI production build path.
+- `ELECTRON_RUN_AS_NODE=1` leaks from the Electron-based editor host into `npm install` child
+  processes; installs were run with the variable cleared so `node-gyp-build-optional-packages`
+  detects `runtime=node` (not `electron`) correctly.
