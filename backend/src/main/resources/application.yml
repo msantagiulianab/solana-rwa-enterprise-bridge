@@ -42,6 +42,13 @@ solana:
     private-key: ${SOLANA_DEVNET_PRIVATE_KEY:}
 
 # ------------------------------------------------------------------
+# Security – API key gate for mutating routes (POST/PATCH/PUT/DELETE).
+# Injected via environment; never committed to source control.
+# ------------------------------------------------------------------
+security:
+  api-key: ${SECURITY_API_KEY:}
+
+# ------------------------------------------------------------------
 # Spring Boot Actuator – health & info endpoints for monitoring.
 # ------------------------------------------------------------------
 management:
@@ -51,4 +58,4 @@ management:
         include: health, info
   endpoint:
     health:
-      show-details: always
+      show-details: never

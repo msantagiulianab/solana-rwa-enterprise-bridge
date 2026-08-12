@@ -15,7 +15,9 @@ import java.util.Map;
 
 /**
  * Translates domain and validation exceptions into consistent REST error
- * responses (404 for missing resources, 400 for invalid input).
+ * responses (404 for missing resources, 400 for invalid input, 401 for failed
+ * authentication, 500 for unexpected failures). All exception bodies are
+ * sanitized: stack traces, class names, and internal paths are never exposed.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -36,7 +38,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
-        return build(HttpStatus.BAD_REQUEST, "Malformed request body: " + ex.getMostSpecificCause().getMessage());
+        return build(HttpStatus.BAD_REQUEST, "Malformed request body");
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleUnexpected(Exception ex) {
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
 
     private ResponseEntity<Map<String, Object>> build(HttpStatus status, String message) {
