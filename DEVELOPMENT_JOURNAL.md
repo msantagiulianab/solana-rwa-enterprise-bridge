@@ -236,3 +236,35 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - `vercel.json` is placed at `frontend/` root (not repo root) because the Vercel project root directory is set to `frontend/`.
 - SPA rewrites are essential for Angular's client-side router — without them, direct navigation to `/tokens`, `/investors`, or `/audit-logs` would return 404 from Vercel's static file server.
 - No environment-specific Vercel config needed beyond the standard Angular build; the `environment.ts`/`environment.development.ts` file replacement in `angular.json` handles API URL switching automatically.
+
+---
+
+### Phase 5: End-to-End Live Verification & Production Readiness
+
+**Plan:** Smoke-test the fully deployed stack (Vercel frontend, Render API, Neon PostgreSQL) across wallet connect, asset tokenization, investor KYC, and audit logging, then run the full local test suites and prepare post-Phase 5 feature branches.
+
+**Live stack verification:**
+- Render API healthy: `/actuator/health` → `{"status":"UP","components":{"db":{"status":"UP"}}}` (Neon PostgreSQL connected).
+- Vercel frontend initially returned a 302 to Vercel SSO (Authentication enabled); after disabling Vercel Auth, it serves the Angular SPA (200 OK).
+- Render backend cold-start: first curl timed out (exit 28/56); subsequent requests after warm-up returned 200.
+
+**Functional smoke tests (live):**
+- Wallet connect (Phantom): injected a mock `window.solana` provider into the live SPA and verified the header toggles Connect Wallet → truncated public key (`GvDM...mrkp`) + Disconnect → Connect Wallet. Production `SolanaWalletService` code path executed successfully.
+- Investor registration (`POST /api/investors`): verified via curl AND via the live UI form → record persisted to Neon (GET returned the new row).
+- Compliance gatekeeper (`POST /api/v1/compliance/check`): PENDING investor correctly returned fail-closed `BLOCKED` decision and wrote an immutable `audit_logs` row (verified via `/api/audit-logs`).
+- Audit log search/filter: free-text search works on live data; **status filter is broken** (see defects).
+
+**Defects discovered (production readiness gaps — NOT yet fixed, tracked for follow-up):**
+1. `POST /api/tokens` → 405. The frontend `+ Tokenize Asset` modal targets this endpoint but the backend `AssetTokenController` only exposes GET. Live UI shows "Tokenization failed".
+2. `PATCH /api/investors/{id}/status` → 404. The frontend APPROVE/REJECT toggles target this endpoint but `InvestorController` only exposes GET + POST. Live UI shows "Failed to update investor status to APPROVED".
+3. `GET /api/investors/{id}` → missing. `BackendApiService.getInvestorById()` has no backend mapping.
+4. `AuditLogStatus` enum mismatch: backend persists `APPROVED`/`BLOCKED`, but the frontend model/status filter uses `SUCCESS`/`REJECTED`/`BLOCKED_BY_COMPLIANCE`/`RPC_ERROR`. The status filter and badge mapping therefore do not match real data.
+
+**Tests:**
+- Frontend: `npm --prefix frontend run test -- --watch=false --browsers=ChromeHeadless` → **37/37 SUCCESS**.
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` initially FAILED with 8 errors in `InvestorRepositoryIT` (IllegalStateException: ApplicationContext failure). Root cause: `InvestorRepositoryIT` was missing `@ActiveProfiles("test")`, so it loaded the default PostgreSQL `ddl-auto: validate` config against `@DataJpaTest`'s embedded H2. Fixed by adding `@ActiveProfiles("test")` (matching `AssetTokenRepositoryIT` and `AuditLogRepositoryIT`). Re-run → **69/69 SUCCESS** (36 unit + 33 integration).
+
+**Decisions:**
+- Test-only fix applied to make the backend suite GREEN; no production code was changed during Phase 5 verification.
+- Phase 5 verification is treated as PARTIALLY SUCCESSFUL: infrastructure and connectivity pass, but four frontend/backend contract gaps must be resolved before full production readiness.
+- Feature branches `feature/security-pentest` and `feature/framework-upgrades` created off `main` for post-Phase 5 work.
