@@ -129,22 +129,22 @@ describe('InvestorKycComponent', () => {
 
     const updatedInvestor: Investor = {
       ...investor,
-      kycStatus: 'APPROVED',
+      kycStatus: 'VERIFIED',
       updatedAt: '2026-08-04T00:00:00Z',
     };
 
-    component.updateInvestorStatus(investor, 'APPROVED');
+    component.updateInvestorStatus(investor, 'VERIFIED');
 
     const patchReq = httpMock.expectOne(
       `${environment.apiBaseUrl}/investors/${investor.id}/status`
     );
     expect(patchReq.request.method).toBe('PATCH');
-    expect(patchReq.request.body.kycStatus).toBe('APPROVED');
+    expect(patchReq.request.body.kycStatus).toBe('VERIFIED');
     patchReq.flush(updatedInvestor);
 
     fixture.detectChanges();
 
-    expect(component.investors[0].kycStatus).toBe('APPROVED');
+    expect(component.investors[0].kycStatus).toBe('VERIFIED');
     expect(component.updatingInvestorId).toBeNull();
   });
 
@@ -168,10 +168,10 @@ describe('InvestorKycComponent', () => {
   });
 
   it('should map KYC status to correct color classes', () => {
-    expect(component.kycStatusColor('APPROVED')).toContain('text-green-400');
-    expect(component.kycStatusColor('IN_REVIEW')).toContain('text-blue-400');
+    expect(component.kycStatusColor('VERIFIED')).toContain('text-green-400');
     expect(component.kycStatusColor('PENDING')).toContain('text-yellow-400');
     expect(component.kycStatusColor('REJECTED')).toContain('text-red-400');
+    expect(component.kycStatusColor('FLAGGED_SANCTION')).toContain('text-orange-400');
     expect(component.kycStatusColor('UNKNOWN')).toContain('text-gray-400');
   });
 });

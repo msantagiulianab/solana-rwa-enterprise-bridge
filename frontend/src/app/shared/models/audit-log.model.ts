@@ -7,4 +7,4 @@ export interface AuditLog {
   timestamp: string;
 }
 
-export type AuditLogStatus = 'SUCCESS' | 'REJECTED' | 'BLOCKED_BY_COMPLIANCE' | 'RPC_ERROR';
+export type AuditLogStatus = 'APPROVED' | 'BLOCKED';

@@ -1,17 +1,21 @@
 package com.solana.rwa.bridge.controller;
 
 import com.solana.rwa.bridge.dto.InvestorRegistrationRequest;
+import com.solana.rwa.bridge.dto.InvestorStatusUpdateRequest;
 import com.solana.rwa.bridge.entity.Investor;
 import com.solana.rwa.bridge.service.InvestorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * REST endpoints for investor registration and KYC status management.
@@ -26,6 +30,23 @@ public class InvestorController {
     @GetMapping
     public List<Investor> getAllInvestors() {
         return investorService.findAll();
+    }
+
+    /**
+     * GET /api/investors/{id} — returns a single investor by UUID.
+     */
+    @GetMapping("/{id}")
+    public Investor getInvestorById(@PathVariable UUID id) {
+        return investorService.findById(id);
+    }
+
+    /**
+     * PATCH /api/investors/{id}/status — updates KYC status (APPROVE / REJECT).
+     */
+    @PatchMapping("/{id}/status")
+    public Investor updateStatus(@PathVariable UUID id,
+                                 @Valid @RequestBody InvestorStatusUpdateRequest request) {
+        return investorService.updateStatus(id, request.getKycStatus());
     }
 
     /**

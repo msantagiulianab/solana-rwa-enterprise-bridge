@@ -9,7 +9,7 @@ export interface Investor {
   updatedAt: string;
 }
 
-export type KycStatus = 'PENDING' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED';
+export type KycStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'FLAGGED_SANCTION';
 
 export interface RegisterInvestorRequest {
   fullName: string;

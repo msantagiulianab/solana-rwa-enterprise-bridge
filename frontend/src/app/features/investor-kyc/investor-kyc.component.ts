@@ -106,14 +106,14 @@ export class InvestorKycComponent implements OnInit {
 
   kycStatusColor(status: string): string {
     switch (status) {
-      case 'APPROVED':
+      case 'VERIFIED':
         return 'text-green-400 bg-green-400/10';
-      case 'IN_REVIEW':
-        return 'text-blue-400 bg-blue-400/10';
       case 'PENDING':
         return 'text-yellow-400 bg-yellow-400/10';
       case 'REJECTED':
         return 'text-red-400 bg-red-400/10';
+      case 'FLAGGED_SANCTION':
+        return 'text-orange-400 bg-orange-400/10';
       default:
         return 'text-gray-400 bg-gray-400/10';
     }

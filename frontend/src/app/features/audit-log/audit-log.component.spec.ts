@@ -15,7 +15,7 @@ describe('AuditLogComponent', () => {
       id: 'log-uuid-1',
       walletAddress: 'DRpbCBMxVnDK7maPMoGQFix5grYexXr3coWsyhEcz6iZ',
       action: 'INVESTOR_REGISTERED',
-      status: 'SUCCESS',
+      status: 'APPROVED',
       reason: 'Investor Alice Johnson registered with KYC status PENDING.',
       timestamp: '2026-08-01T10:00:00Z',
     },
@@ -23,7 +23,7 @@ describe('AuditLogComponent', () => {
       id: 'log-uuid-2',
       walletAddress: 'CvjpgaMsCNqmEH65WoFjfKep97Wvwy5uLCEiVRBUcoXH',
       action: 'MINT_ATTEMPT',
-      status: 'BLOCKED_BY_COMPLIANCE',
+      status: 'BLOCKED',
       reason: 'Mint blocked by compliance: investor KYC not approved.',
       timestamp: '2026-08-01T10:05:00Z',
     },
@@ -31,7 +31,7 @@ describe('AuditLogComponent', () => {
       id: 'log-uuid-3',
       walletAddress: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
       action: 'RPC_CALL',
-      status: 'RPC_ERROR',
+      status: 'BLOCKED',
       reason: 'Solana RPC timeout after 3 retries.',
       timestamp: '2026-08-01T09:55:00Z',
     },
@@ -104,11 +104,11 @@ describe('AuditLogComponent', () => {
     httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
     fixture.detectChanges();
 
-    component.filterStatus = 'SUCCESS';
+    component.filterStatus = 'APPROVED';
     component.applyFilters();
 
     expect(component.filteredLogs.length).toBe(1);
-    expect(component.filteredLogs[0].status).toBe('SUCCESS');
+    expect(component.filteredLogs[0].status).toBe('APPROVED');
   });
 
   it('should filter logs by search and status combined', () => {
@@ -117,7 +117,7 @@ describe('AuditLogComponent', () => {
     fixture.detectChanges();
 
     component.searchAction = 'rpc';
-    component.filterStatus = 'RPC_ERROR';
+    component.filterStatus = 'BLOCKED';
     component.applyFilters();
 
     expect(component.filteredLogs.length).toBe(1);
@@ -130,7 +130,7 @@ describe('AuditLogComponent', () => {
     fixture.detectChanges();
 
     component.searchAction = 'something';
-    component.filterStatus = 'SUCCESS';
+    component.filterStatus = 'APPROVED';
     component.applyFilters();
 
     component.clearFilters();
@@ -154,21 +154,15 @@ describe('AuditLogComponent', () => {
     component.searchAction = 'timeout';
     component.applyFilters();
     expect(component.filteredLogs.length).toBe(1);
-    expect(component.filteredLogs[0].status).toBe('RPC_ERROR');
+    expect(component.filteredLogs[0].status).toBe('BLOCKED');
   });
 
   it('should map status to correct badge classes', () => {
-    const success = component.statusBadge('SUCCESS');
-    expect(success).toContain('text-green-400');
+    const approved = component.statusBadge('APPROVED');
+    expect(approved).toContain('text-green-400');
 
-    const blocked = component.statusBadge('BLOCKED_BY_COMPLIANCE');
+    const blocked = component.statusBadge('BLOCKED');
     expect(blocked).toContain('text-yellow-400');
-
-    const rejected = component.statusBadge('REJECTED');
-    expect(rejected).toContain('text-red-400');
-
-    const rpcError = component.statusBadge('RPC_ERROR');
-    expect(rpcError).toContain('text-orange-400');
 
     const unknown = component.statusBadge('UNKNOWN');
     expect(unknown).toContain('text-gray-400');
