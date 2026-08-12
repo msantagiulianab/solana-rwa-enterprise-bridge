@@ -16,6 +16,7 @@ export const apiKeyInterceptor: HttpInterceptorFn = (
   next: HttpHandlerFn
 ) => {
   if (MUTATING_METHODS.has(req.method) && environment.apiKey) {
+    console.log('Sending X-API-Key:', environment.apiKey);
     const cloned = req.clone({
       setHeaders: { 'X-API-Key': environment.apiKey },
     });

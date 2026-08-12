@@ -43,6 +43,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "Authorization",
                         "X-API-Key"
                 )
+                .exposedHeaders("X-API-Key")
                 .allowCredentials(true)
                 .maxAge(3600);
     }
