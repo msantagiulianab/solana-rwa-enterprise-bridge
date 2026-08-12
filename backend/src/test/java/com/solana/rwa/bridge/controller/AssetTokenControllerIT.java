@@ -8,8 +8,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import com.solana.rwa.bridge.config.ApiKeyAuthInterceptor;
 
 import java.math.BigDecimal;
 
@@ -23,7 +27,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * MockMvc integration tests for {@link AssetTokenController}.
  */
 @WebMvcTest(AssetTokenController.class)
+@Import(ApiKeyAuthInterceptor.class)
+@ActiveProfiles("test")
 class AssetTokenControllerIT {
+
+    private static final String API_KEY = "test-api-key";
 
     @Autowired
     private MockMvc mockMvc;
@@ -42,6 +50,7 @@ class AssetTokenControllerIT {
         when(tokenService.create(any(AssetTokenRegistrationRequest.class))).thenReturn(token);
 
         mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -57,6 +66,7 @@ class AssetTokenControllerIT {
     @Test
     void createToken_returns400WhenAssetNameBlank() throws Exception {
         mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -70,6 +80,7 @@ class AssetTokenControllerIT {
     @Test
     void createToken_returns400WhenValuationMissing() throws Exception {
         mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -82,6 +93,7 @@ class AssetTokenControllerIT {
     @Test
     void createToken_returns400WhenValuationNotPositive() throws Exception {
         mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
