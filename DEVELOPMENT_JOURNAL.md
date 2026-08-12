@@ -2,48 +2,28 @@
 
 Architectural decisions, test coverage, and Solana/Spring integration notes for the Solana RWA Enterprise Bridge.
 
+---
+
 ## 2026-08-11
 
-### Solana Devnet RPC Integration Layer (TDD, GREEN: 70 tests)
+### Phase 1: Spring Boot 3 Backend & Local PostgreSQL Scaffold
 
-**Plan:** Implement a resilient JSON-RPC client (`SolanaRpcAdapter`) that reads `SOLANA_DEVNET_RPC_URL` from configuration and queries live Devnet state (`getAccountInfo`, `getTokenAccountBalance`), then integrate on-chain wallet existence verification into the compliance gatekeeper — all with pure Mockito unit tests that never touch the network during the build.
+**Plan:** Establish a Maven multi-layer backend under `backend/` with Java 17 + Spring Boot 3.3.x for the RWA compliance bridge.
 
-**Tests added (written first — RED → GREEN):**
-- `SolanaRpcAdapterTest` (9, pure Mockito): successful `getAccountInfo` response parsing (owner/lamports/executable/space), absent wallet returns a non-existent `AccountInfo`, JSON-RPC error payload → `SolanaRpcException`, null/malformed response → `SolanaRpcException`, network timeout (`ResourceAccessException`) → `SolanaRpcException`, HTTP 502 → `SolanaRpcException`, successful `getTokenAccountBalance` parsing (amount/decimals/uiAmountString), missing token account → `SolanaRpcException`, JSON-RPC error payload on token query → `SolanaRpcException`. The `RestClient` fluent chain (`post().uri().contentType().body().retrieve().body(...)`) is fully mocked with Mockito — no live Devnet traffic is ever attempted.
-- `ComplianceServiceTest` expanded 11 → 15: BLOCKED when wallet does not exist on-chain; BLOCKED (fail-closed) when the RPC layer is unavailable; RPC layer is **never** consulted when investor is REJECTED or asset is NON_COMPLIANT.
-
-**Implementation:**
-- `SolanaRpcAdapter` (`rpc` package) — Spring `@Service` wrapping a Spring 6.1 `RestClient`. Endpoint injected from `solana.rpc.url` (`${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}`). Methods: `getAccountInfo(walletAddress)` and `getTokenAccountBalance(tokenAccountAddress)`. Every interaction is wrapped in try-catch:
-  - `ResourceAccessException` (timeout / unreachable) → `SolanaRpcException`
-  - `RestClientResponseException` (HTTP error) → `SolanaRpcException`
-  - null/malformed JSON-RPC envelope → `SolanaRpcException`
-  - JSON-RPC `error` payload → `SolanaRpcException`
-  - missing token account (`value == null`) → `SolanaRpcException`
-- JSON-RPC DTO records (`rpc/dto`): `RpcEnvelope<T>` (with `hasError()`/`isMalformed()`), `RpcError`, `RpcContext`, `AccountInfo` (with `exists()`), `AccountInfoResult`, `TokenAccountBalance`, `TokenAccountBalanceResult` — all `@JsonIgnoreProperties(ignoreUnknown = true)`.
-- `SolanaRpcException` — custom runtime exception with method-aware message constructors; treated as fail-closed by callers.
+**Tests added:** none yet (scaffold only; TDD begins with the compliance gatekeeper and Solana RPC services).
 
 **Decisions:**
-- **Fail-closed integration:** `ComplianceService.verifyEligibility` now calls `solanaRpcAdapter.getAccountInfo(walletAddress).exists()` only AFTER all off-chain KYC/asset checks pass. If the wallet does not exist, or the RPC layer throws `SolanaRpcException`, the check is BLOCKED and audit-logged — never silently approved.
-- **Off-chain gatekeeping preserved:** the RPC layer is never invoked for investors that are not `VERIFIED` or assets that are not `COMPLIANT` (asserted via `verifyNoInteractions(solanaRpcAdapter)`).
-- **Mockito strictness fix:** stubbing `RestClient.RequestBodySpec.body(any())` binds to the `body(MultiValueMap)` overload (null literal), causing `PotentialStubbingProblem` when the adapter calls `body(Object)`. Fixed with `doReturn(bodySpec).when(bodySpec).body(any(Object.class))` to bind the correct overload.
-- Every RPC attempt/decision remains audit-logged per the immutable audit trail rule.
-
-### Scaffold: Spring Boot 3 Backend & Local PostgreSQL
-
-
-**Decisions:**
-- Established a Maven multi-layer backend under `backend/` with Java 17 + Spring Boot 3.3.x.
 - Dependencies selected: Spring Web, Spring Data JPA, PostgreSQL Driver (runtime), Lombok, Bean Validation, and `spring-boot-starter-test` (JUnit 5, Mockito).
 - `application.yml` contains **zero hardcoded secrets**. Datasource URL/username/password, server port, and Solana Devnet RPC URL/private key are all injected via environment variables (`SPRING_DATASOURCE_*`, `SOLANA_DEVNET_*`) with local-dev defaults only.
 - `hibernate.ddl-auto: validate` — schema drift will be rejected; migrations to be managed via Flyway in a later phase.
 - Added root `docker-compose.yml` for local PostgreSQL 16 with a named volume and healthcheck, parameterized by `POSTGRES_*` env vars.
 - Expanded `.env.example` to cover both Compose (`POSTGRES_*`) and Spring (`SPRING_DATASOURCE_*`, `SOLANA_DEVNET_*`) variables.
 
-**Tests added:** none yet (scaffold only; TDD begins with the compliance gatekeeper and Solana RPC services).
-
 **Spring/Solana interactions:** Solana RPC URL + private key are bound from the environment under the `solana.rpc.*` configuration prefix, ready for the `SolanaRpcService` mock-backed unit tests.
 
-### Database Schema & JPA Repository Layer (TDD, GREEN: 20 tests)
+---
+
+### Phase 1.5: Database Schema & JPA Repository Layer (TDD, GREEN: 20 tests)
 
 **Plan:** Persist the RWA compliance model (investor, asset token, audit trail) with Spring Data JPA repositories verified by `@DataJpaTest` integration tests on H2 in PostgreSQL mode.
 
@@ -62,7 +42,9 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Constraint tests flush through `saveAndFlush()` so the Spring Data proxy translates the raw Hibernate `ConstraintViolationException` into Spring's `DataIntegrityViolationException`.
 - Production `ddl-auto` remains `validate`; schema migration will be managed via Flyway in a later phase.
 
-### Compliance Engine Service Layer & REST Controllers (TDD, GREEN: 57 tests)
+---
+
+### Phase 2: Compliance Engine Service Layer & REST Controllers (TDD, GREEN: 57 tests)
 
 **Plan:** Gate every Solana RPC dispatch behind off-chain KYC/AML compliance checks, persist an immutable audit log for every attempt, and expose the gatekeeper and investor registration over `/api/v1/*`.
 
@@ -87,6 +69,34 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 
 **Maven wrapper:** added `mvnw`, `mvnw.cmd`, and `.mvn/wrapper/maven-wrapper.properties` (Maven 3.9.14, `only-script` distribution) via `mvn wrapper:wrapper` so the backend builds without a system Maven install. Verified the full 57-test suite runs green through `.\mvnw.cmd test`.
 
+---
+
+### Phase 2.5: Solana Devnet RPC Integration Layer (TDD, GREEN: 70 tests)
+
+**Plan:** Implement a resilient JSON-RPC client (`SolanaRpcAdapter`) that reads `SOLANA_DEVNET_RPC_URL` from configuration and queries live Devnet state (`getAccountInfo`, `getTokenAccountBalance`), then integrate on-chain wallet existence verification into the compliance gatekeeper — all with pure Mockito unit tests that never touch the network during the build.
+
+**Tests added (written first — RED → GREEN):**
+- `SolanaRpcAdapterTest` (9, pure Mockito): successful `getAccountInfo` response parsing (owner/lamports/executable/space), absent wallet returns a non-existent `AccountInfo`, JSON-RPC error payload → `SolanaRpcException`, null/malformed response → `SolanaRpcException`, network timeout (`ResourceAccessException`) → `SolanaRpcException`, HTTP 502 → `SolanaRpcException`, successful `getTokenAccountBalance` parsing (amount/decimals/uiAmountString), missing token account → `SolanaRpcException`, JSON-RPC error payload on token query → `SolanaRpcException`. The `RestClient` fluent chain (`post().uri().contentType().body().retrieve().body(...)`) is fully mocked with Mockito — no live Devnet traffic is ever attempted.
+- `ComplianceServiceTest` expanded 11 → 15: BLOCKED when wallet does not exist on-chain; BLOCKED (fail-closed) when the RPC layer is unavailable; RPC layer is **never** consulted when investor is REJECTED or asset is NON_COMPLIANT.
+
+**Implementation:**
+- `SolanaRpcAdapter` (`rpc` package) — Spring `@Service` wrapping a Spring 6.1 `RestClient`. Endpoint injected from `solana.rpc.url` (`${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}`). Methods: `getAccountInfo(walletAddress)` and `getTokenAccountBalance(tokenAccountAddress)`. Every interaction is wrapped in try-catch:
+  - `ResourceAccessException` (timeout / unreachable) → `SolanaRpcException`
+  - `RestClientResponseException` (HTTP error) → `SolanaRpcException`
+  - null/malformed JSON-RPC envelope → `SolanaRpcException`
+  - JSON-RPC `error` payload → `SolanaRpcException`
+  - missing token account (`value == null`) → `SolanaRpcException`
+- JSON-RPC DTO records (`rpc/dto`): `RpcEnvelope<T>` (with `hasError()`/`isMalformed()`), `RpcError`, `RpcContext`, `AccountInfo` (with `exists()`), `AccountInfoResult`, `TokenAccountBalance`, `TokenAccountBalanceResult` — all `@JsonIgnoreProperties(ignoreUnknown = true)`.
+- `SolanaRpcException` — custom runtime exception with method-aware message constructors; treated as fail-closed by callers.
+
+**Decisions:**
+- **Fail-closed integration:** `ComplianceService.verifyEligibility` now calls `solanaRpcAdapter.getAccountInfo(walletAddress).exists()` only AFTER all off-chain KYC/asset checks pass. If the wallet does not exist, or the RPC layer throws `SolanaRpcException`, the check is BLOCKED and audit-logged — never silently approved.
+- **Off-chain gatekeeping preserved:** the RPC layer is never invoked for investors that are not `VERIFIED` or assets that are not `COMPLIANT` (asserted via `verifyNoInteractions(solanaRpcAdapter)`).
+- **Mockito strictness fix:** stubbing `RestClient.RequestBodySpec.body(any())` binds to the `body(MultiValueMap)` overload (null literal), causing `PotentialStubbingProblem` when the adapter calls `body(Object)`. Fixed with `doReturn(bodySpec).when(bodySpec).body(any(Object.class))` to bind the correct overload.
+- Every RPC attempt/decision remains audit-logged per the immutable audit trail rule.
+
+---
+
 ### Phase 3: Render Deployment Preparation (TDD, GREEN: 70 tests)
 
 **Plan:** Prepare the backend for Render Web Service deployment with a Dockerfile, `render.yaml` Blueprint, production environment variables, and CORS configuration for Vercel frontends.
@@ -96,7 +106,7 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 **Infrastructure added:**
 
 - `backend/Dockerfile` — Multi-stage build (eclipse-temurin:17-jdk-jammy → eclipse-temurin:17-jre-jammy) with Maven wrapper packaging (`-DskipTests`), non-root `appuser`, and healthcheck against `/actuator/health`.
-- `render.yaml` — Root-level Render Blueprint declaring `solana-rwa-bridge-api` as a Docker-based web service with `SPRING_PROFILES_ACTIVE=prod`, datasource credentials, `SOLANA_DEVNET_RPC_URL`, and `SOLANA_DEVNET_PRIVATE_KEY` as non-synced env vars.
+- `render.yaml` — Root-level Render Blueprint declaring `solana-rwa-bridge-api` as a Docker-based web service in region `ohio` with `SPRING_PROFILES_ACTIVE=prod`, datasource credentials, `SOLANA_DEVNET_RPC_URL`, `SOLANA_DEVNET_PRIVATE_KEY` as non-synced env vars, and `SERVER_PORT=8080`.
 
 **CORS configuration:**
 
@@ -112,6 +122,8 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Multi-stage build separates JDK (for compilation) from JRE (for runtime), minimizing image size and attack surface.
 - `HEALTHCHECK` depends on Spring Boot Actuator being available; the `spring-boot-starter-web` dependency transitively includes actuator basics.
 - CORS uses `allowedOriginPatterns` (not `allowedOrigins`) to support wildcard subdomain matching for `*.vercel.app`.
+
+---
 
 ### Phase 4: Angular Frontend UI Scaffold (BUILD VERIFIED: 0 errors)
 
@@ -146,6 +158,8 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - No Angular Material — pure Tailwind utility classes for styling to keep the bundle lean.
 - All forms use Angular `FormsModule` (`[(ngModel)]`) for simplicity; reactive forms can be introduced later if complex validation needs arise.
 - Spec file IDE warnings about `describe`/`it`/`expect` are expected — these resolve at Karma runtime via `tsconfig.spec.json` jasmine types.
+
+---
 
 ### Phase 4.2: Angular Frontend Feature Implementation (TDD, GREEN: 37 specs)
 
@@ -191,3 +205,34 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 **Build verification:**
 - `npm --prefix frontend run test` — **37/37 SUCCESS** (0 failures).
 - `npm --prefix frontend run build` — BUILD SUCCESS (3.138s). Total bundle: 313.93 KB (87.23 KB gzipped). Lazy chunks: investor-kyc (9.63 KB), asset-tokenization (8.72 KB), audit-log (6.92 KB).
+
+---
+
+### Phase 4.3: Vercel Production Frontend Deployment
+
+**Plan:** Deploy the Angular 17.3 standalone frontend to Vercel production with SPA rewrites, connected to the Render-hosted Spring Boot backend via the production environment configuration.
+
+**Infrastructure added:**
+
+- `frontend/vercel.json` — SPA rewrite rule (`/(.*)` → `/index.html`) enabling client-side routing for `/tokens`, `/investors`, and `/audit-logs` paths.
+- `frontend/src/environments/environment.ts` — Production config pointing `apiBaseUrl` to `https://solana-rwa-enterprise-bridge.onrender.com/api` and `solanaRpcEndpoint` to `https://api.devnet.solana.com`.
+- `frontend/src/environments/environment.development.ts` — Development config pointing to `http://localhost:8080/api` for local Angular dev server.
+
+**Deployment details:**
+- Vercel project connected to the GitHub repository; auto-detects Angular framework from `frontend/package.json`.
+- Build command: `npm run build` (runs `ng build` inside `frontend/`).
+- Output directory: `frontend/dist/frontend` (configured in Vercel dashboard).
+- Production URL: `https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app`
+
+**CORS validation:**
+- Vercel deployment origin (`https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app`) matches the `https://*.vercel.app` wildcard pattern configured in the backend `WebConfig`, so all API calls from the Vercel-hosted frontend to the Render-hosted backend succeed without cross-origin errors.
+- Preflight `OPTIONS` requests are cached for 1 hour (`maxAge: 3600`).
+
+**Build verification:**
+- `npm --prefix frontend run build` — BUILD SUCCESS (6.142s). Total initial bundle: 313.93 KB (87.23 KB gzipped). All lazy chunks loading correctly.
+- `backend\mvnw.cmd test-compile` — BUILD SUCCESS (zero compilation errors). Full backend test suite remains GREEN (70 tests: 36 unit + 34 integration).
+
+**Decisions:**
+- `vercel.json` is placed at `frontend/` root (not repo root) because the Vercel project root directory is set to `frontend/`.
+- SPA rewrites are essential for Angular's client-side router — without them, direct navigation to `/tokens`, `/investors`, or `/audit-logs` would return 404 from Vercel's static file server.
+- No environment-specific Vercel config needed beyond the standard Angular build; the `environment.ts`/`environment.development.ts` file replacement in `angular.json` handles API URL switching automatically.
