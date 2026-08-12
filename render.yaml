@@ -22,5 +22,7 @@ services:
         sync: false
       - key: SOLANA_DEVNET_PRIVATE_KEY
         sync: false
+      - key: SECURITY_API_KEY
+        sync: false
       - key: SERVER_PORT
         value: "8080"

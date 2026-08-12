@@ -268,3 +268,58 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Test-only fix applied to make the backend suite GREEN; no production code was changed during Phase 5 verification.
 - Phase 5 verification is treated as PARTIALLY SUCCESSFUL: infrastructure and connectivity pass, but four frontend/backend contract gaps must be resolved before full production readiness.
 - Feature branches `feature/security-pentest` and `feature/framework-upgrades` created off `main` for post-Phase 5 work.
+
+---
+
+## 2026-08-12
+
+### Post-Phase 5: Penetration Testing & Security Audit (GREEN: 78 backend + 39 frontend)
+
+**Plan:** Audit `backend/src/` and `frontend/src/` against a new `.clinerules/security-pentest.md`
+baseline, produce a structured findings report, remediate every identified issue, and re-verify
+both test suites.
+
+**Environment checks:**
+- Confirmed `git branch --show-current` → `feature/security-pentest`.
+- Verified live Render API reachable: `GET https://solana-rwa-enterprise-bridge.onrender.com/api`
+  returned a Spring Boot JSON 404 envelope (server up; bare `/api` has no mapping), confirming RWA backend is live.
+
+**Security rule file:**
+- Renamed the tracked root `.clinerules` **file** → `.clinerules.md` (Windows/Git cannot have a
+  file and directory with the same name), preserving its content.
+- Created `.clinerules/security-pentest.md` with Spring Boot (OWASP Top 10, CORS, SQLi, actuator,
+  exceptions, auth headers), Web3/frontend (RPC exposure, private keys, wallet state, XSS), and
+  REST contract-integrity rules plus a High/Medium/Low severity scale.
+
+**Findings & remediations:**
+- **F1 (High)** Unauthenticated mutating routes → added `ApiKeyAuthInterceptor` (`X-API-Key` gate
+  on POST/PATCH/PUT/DELETE, 401 on missing/invalid), registered in `WebConfig`.
+- **F2 (High)** Missing catch-all 500 + malformed-body message leaked internal cause → sanitized
+  `GlobalExceptionHandler` (`Exception.class` → generic 500; unreadable body → fixed message).
+- **F3 (Medium)** Actuator `show-details: always` → `never`; only `health`/`info` web-exposed.
+- **F4 (Medium)** CORS `allowedHeaders("*")` + `allowCredentials(true)` → explicit allowlist
+  (`Origin`, `Content-Type`, `Accept`, `Authorization`, `X-API-Key`).
+- **F5 (Medium)** `TokenService.findById` threw generic `RuntimeException` → typed
+  `AssetTokenNotFoundException` (404).
+
+**Frontend hardening:**
+- Added `frontend/src/app/shared/interceptors/api-key.interceptor.ts` (functional interceptor) that
+  injects `X-API-Key` on mutating requests only; registered via `provideHttpClient(withInterceptors(...))`.
+- Added `apiKey` to both environment files (empty default; injected at build time).
+- Added `SECURITY_API_KEY` to `application.yml`, `render.yaml`, and `.env.example`.
+
+**Tests added/updated:**
+- `ApiKeyAuthInterceptorTest` (5 unit tests).
+- `ComplianceControllerIT` updated → 10 tests (added 401 missing/invalid key; pass key on valid POSTs).
+- `InvestorControllerIT` updated → 7 tests (added 401 missing/invalid key).
+- `api-key.interceptor.spec.ts` (2 frontend specs).
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend/pom.xml test` → **78 tests, 0 failures, 0 errors**.
+- Frontend: `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **39/39 SUCCESS**.
+
+**Decisions:**
+- Read-only endpoints (GET) remain deliberately public for the audit/ledger viewers; only
+  mutating routes are gated, matching the security baseline.
+- The frontend `apiKey` must be supplied at build/deploy time (Vercel env var); committing a real
+  key would violate the private-key/secret rule, so the checked-in default is empty.

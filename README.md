@@ -99,6 +99,7 @@ Backend defaults to `http://localhost:8080`.
 | `SPRING_DATASOURCE_PASSWORD` | `postgres` | DB password |
 | `SOLANA_DEVNET_RPC_URL` | `https://api.devnet.solana.com` | Solana Devnet JSON-RPC endpoint |
 | `SOLANA_DEVNET_PRIVATE_KEY` | *(none)* | Base58 keypair — **never commit** |
+| `SECURITY_API_KEY` | *(none)* | Shared API key required on POST/PATCH/PUT/DELETE routes |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_PORT` | `rwa_db` / `postgres` / `postgres` / `5432` | `docker-compose.yml` |
 
 ## Docker Compose
@@ -176,6 +177,7 @@ The repo includes a [`render.yaml`](render.yaml) Blueprint at the root and a mul
 | `SPRING_DATASOURCE_PASSWORD` | Database password |
 | `SOLANA_DEVNET_RPC_URL` | Solana Devnet JSON-RPC endpoint |
 | `SOLANA_DEVNET_PRIVATE_KEY` | Base58 keypair — **never commit** |
+| `SECURITY_API_KEY` | Shared API key required on mutating routes |
 | `SERVER_PORT` | Set to `8080` (Blueprint default) |
 
 ### CORS
@@ -191,15 +193,15 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 36 |
-| Backend integration tests (`*IT.java`) | 33 |
-| Frontend specs | 37 |
+| Backend unit tests (`*Test.java`) | 41 |
+| Backend integration tests (`*IT.java`) | 37 |
+| Frontend specs | 39 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9) · `ApiKeyAuthInterceptorTest` (5)
 
-**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (8) · `InvestorControllerIT` (5)
+**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (7)
 
-**Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (9) · `SolanaWalletService` (4)
+**Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (9) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 
