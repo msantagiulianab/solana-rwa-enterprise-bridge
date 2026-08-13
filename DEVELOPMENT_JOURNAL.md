@@ -222,10 +222,10 @@ Architectural decisions, test coverage, and Solana/Spring integration notes for 
 - Vercel project connected to the GitHub repository; auto-detects Angular framework from `frontend/package.json`.
 - Build command: `npm run build` (runs `ng build` inside `frontend/`).
 - Output directory: `frontend/dist/frontend` (configured in Vercel dashboard).
-- Production URL: `https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app`
+- Production URL: `https://solana-rwa-enterprise-bridge.vercel.app`
 
 **CORS validation:**
-- Vercel deployment origin (`https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app`) matches the `https://*.vercel.app` wildcard pattern configured in the backend `WebConfig`, so all API calls from the Vercel-hosted frontend to the Render-hosted backend succeed without cross-origin errors.
+- Vercel deployment origin (`https://solana-rwa-enterprise-bridge.vercel.app`) matches the `https://*.vercel.app` wildcard pattern configured in the backend `WebConfig`, so all API calls from the Vercel-hosted frontend to the Render-hosted backend succeed without cross-origin errors.
 - Preflight `OPTIONS` requests are cached for 1 hour (`maxAge: 3600`).
 
 **Build verification:**

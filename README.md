@@ -31,7 +31,7 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 
 | Layer | Technology | Hosting |
 |-------|-----------|---------|
-| Frontend | Angular 18 (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app) |
+| Frontend | Angular 18 (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge.vercel.app) |
 | Backend | Spring Boot 3.5, Java 21, Spring Data JPA, Lombok | [Render](https://solana-rwa-enterprise-bridge.onrender.com/api) |
 | Database | PostgreSQL (Neon Serverless – production; Docker PostgreSQL 16 – local dev) | Neon / Docker |
 | Blockchain | Solana Devnet JSON-RPC (SolanaRpcAdapter with pure Mockito unit tests) | api.devnet.solana.com |
@@ -122,7 +122,7 @@ Located in [`frontend/`](frontend/).
 | Styling | Tailwind CSS 3.4 (PostCSS + Autoprefixer) |
 | Web3 | `@solana/web3.js` (Phantom browser wallet integration) |
 | API | Render backend at `https://solana-rwa-enterprise-bridge.onrender.com/api` |
-| Hosting | Vercel (`https://solana-rwa-enterprise-bridge-3oj71x1cv.vercel.app`) |
+| Hosting | Vercel (`https://solana-rwa-enterprise-bridge.vercel.app`) |
 
 ### Run locally
 
