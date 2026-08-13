@@ -364,3 +364,80 @@ Angular 18+, then re-verify both test suites for regressions.
 - `ELECTRON_RUN_AS_NODE=1` leaks from the Electron-based editor host into `npm install` child
   processes; installs were run with the variable cleared so `node-gyp-build-optional-packages`
   detects `runtime=node` (not `electron`) correctly.
+
+---
+
+### Post-Phase 5 (Step 3): Contract Alignment & Production API-Key Hardening
+
+**Plan:** Close the remaining frontend/backend contract gaps surfaced during Phase 5 live
+verification and make the `X-API-Key` gate actually reach the deployed production bundle.
+
+**Contract alignment (`fix(contract)`):**
+- Aligned the Angular status enums with the backend entities: `AuditLogStatus` is now
+  `APPROVED`/`BLOCKED` (previously `SUCCESS`/`REJECTED`/`BLOCKED_BY_COMPLIANCE`/`RPC_ERROR`),
+  and `AssetTokenComplianceStatus`/`KycStatus` mirror the backend enum values so the audit-log
+  and status filters match real data.
+- Restored `TokenService.create` so `POST /api/tokens` has a working service path after the
+  security refactor.
+
+**Production API-key injection & header hardening:**
+- `fix(frontend)`: `scripts/generate-environment.js` runs on the `prebuild` hook (`npm run
+  build`), bakes `SECURITY_API_KEY` into `src/environments/environment.prod.ts` via Angular
+  `fileReplacements`, and **fails the build if the variable is missing**.
+- `fix(security)`: registered the Angular `apiKeyInterceptor` via
+  `provideHttpClient(withInterceptors(...))` and added `X-API-Key` to the backend CORS
+  `allowedHeaders` allowlist so credentialed preflight requests pass.
+
+**Decisions:**
+- The checked-in `environment.ts`/`environment.development.ts` keep an empty `apiKey`; the real
+  value exists only at build/deploy time (Vercel env var), never in the repository.
+
+---
+
+## 2026-08-13
+
+### Post-Phase 5 (Step 4): Immutable Audit Logging for Tokenization & KYC (GREEN: 85 backend)
+
+**Plan:** Extend the immutable audit trail to the two business mutations that previously wrote
+data without an audit record — asset tokenization and KYC verification — so the ledger reflects
+every state-changing event end-to-end.
+
+**Implementation:**
+- `AssetTokenController.createToken` writes an `AuditLog` (`action=TOKENIZE_ASSET`,
+  `status=APPROVED`) attributed to the Solana system-program address
+  (`11111111111111111111111111111111`) as a fixed treasury/sentinel wallet after a successful
+  token registration.
+- `InvestorController.updateStatus` writes an `AuditLog` (`action=KYC_VERIFIED`,
+  `status=APPROVED`) whenever the resulting status is `VERIFIED`.
+
+**Tests:**
+- `AssetTokenControllerIT` (4) and `InvestorControllerIT` (10) exercise the new audit
+  side-effects. Backend suite grows to **85 tests, 0 failures, 0 errors** (41 unit + 44
+  integration).
+
+---
+
+### Post-Phase 5 (Step 5): Mobile Phantom Universal Deep Linking (GREEN: 42 frontend)
+
+**Plan:** Make the dApp usable from Phantom's mobile wallet by adding Phantom's official
+universal-link hand-off alongside the existing desktop extension flow.
+
+**Implementation:**
+- `SolanaWalletService.isMobileDevice()` detects mobile user agents (Android/iOS/iPad/Opera
+  Mini/IEMobile/Mobile) under an `isPlatformBrowser` guard.
+- `SolanaWalletService.buildPhantomDeepLink()` produces
+  `https://phantom.app/ul/browse/{encodeURIComponent(currentUrl)}?ref={encodeURIComponent(currentUrl)}`,
+  redirecting mobile users into Phantom's in-app browser with the dApp loaded.
+- `AppComponent` renders **Connect via Phantom App** (deep link) instead of **Install Phantom**
+  when on mobile without the extension; the desktop path is unchanged.
+
+**Frontend polish (same pass):**
+- `fix(frontend)`: removed an `X-API-Key` console-log leak and documented build-time key
+  injection in the environment generator.
+- Responsive navigation/menu improvements for mobile viewports.
+- Footer updated to drop the phase marker; Vercel project URL referenced consistently across
+  environment files.
+
+**Tests:**
+- `AppComponent` (8 → 9) adds the mobile deep-link rendering spec.
+- `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **42/42 SUCCESS**.

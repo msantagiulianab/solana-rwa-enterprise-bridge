@@ -2,24 +2,34 @@
 
 Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML compliance, audit, PostgreSQL) and the Solana blockchain (Devnet RPC). Strict Test-Driven Development, off-chain compliance gatekeeping, and immutable audit logging.
 
+## What It Solves
+
+The Solana RWA Enterprise Bridge is a compliance-first rails for tokenizing real-world assets (RWAs) on Solana with **automated KYC/AML enforcement**.
+
+- **Issuers** register and value off-chain assets (`POST /api/tokens`).
+- **Investors** are onboarded through a KYC/AML gatekeeper that evaluates eligibility before any on-chain action (`POST /api/v1/compliance/check`).
+- **Every decision** — approved or blocked — is written to an immutable audit trail, and no Solana RPC dispatch happens before off-chain compliance passes (fail-closed).
+
+The result is an auditable, regulator-friendly flow that keeps unvetted counterparties away from the RPC/settlement layer while delegating all signing to the user's own wallet.
+
 ## Architecture
 
 ```
 ┌──────────────────────────────────────┐       HTTP       ┌─────────────────────────────────┐
-│  Angular 18 Frontend                 │ ───────────────► │  Spring Boot 3.5 Backend (Java 21) │
+│  Angular 18+ Frontend               │ ───────────────► │  Spring Boot 3.5 Backend (Java 21) │
 │  (standalone, Tailwind CSS,          │                  │  - Compliance Gatekeeper          │
-│   @solana/web3.js, Phantom wallet)   │                  │  - Audit Logs (immutable)         │
-│  ── Hosted on Vercel                │                  │  - Idempotency keys               │
-│     solana-rwa-enterprise-bridge     │                  │  - SolanaRpcAdapter (JSON-RPC)    │
-│     .vercel.app                      │                  │  ── Hosted on Render              │
-└──────────────────────────────────────┘                  │     solana-rwa-enterprise-bridge  │
-                                                          │     .onrender.com/api             │
-                                                          │           │                       │
-                                                          │           ▼                       │
-                                                          │  ┌──────────────────┐             │
-                                                          │  │ Neon Serverless  │             │
-                                                          │  │ PostgreSQL       │             │
-                                                          │  └──────────────────┘             │
+│   @solana/web3.js, Phantom wallet    │                  │  - Audit Logs (immutable)         │
+│   extension + Mobile Deep Linking)   │                  │  - Idempotency keys               │
+│  ── Hosted on Vercel                │                  │  - SolanaRpcAdapter (JSON-RPC)    │
+│     solana-rwa-enterprise-bridge     │                  │  ── Hosted on Render              │
+│     .vercel.app                      │                  │     solana-rwa-enterprise-bridge  │
+└──────────────────────────────────────┘                  │     .onrender.com/api             │
+           │                                              │           │                       │
+           │  Mobile: Phantom Universal Link              │           ▼                       │
+           │  https://phantom.app/ul/browse/…             │  ┌──────────────────┐             │
+           ▼                                              │  │ Neon Serverless  │             │
+   Phantom Mobile in-app browser                          │  │ PostgreSQL       │             │
+   (deep-link into the SPA)                               │  └──────────────────┘             │
                                                           │           │                       │
                                                           │           ▼                       │
                                                           │  ┌──────────────────┐             │
@@ -31,10 +41,40 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 
 | Layer | Technology | Hosting |
 |-------|-----------|---------|
-| Frontend | Angular 18 (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge.vercel.app) |
+| Frontend | Angular 18+ (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge.vercel.app) |
 | Backend | Spring Boot 3.5, Java 21, Spring Data JPA, Lombok | [Render](https://solana-rwa-enterprise-bridge.onrender.com/api) |
 | Database | PostgreSQL (Neon Serverless – production; Docker PostgreSQL 16 – local dev) | Neon / Docker |
 | Blockchain | Solana Devnet JSON-RPC (SolanaRpcAdapter with pure Mockito unit tests) | api.devnet.solana.com |
+| Wallet | Phantom browser extension (desktop) + Phantom universal deep link (mobile) | phantom.app |
+
+## Live Links & Access
+
+| Resource | URL |
+|----------|-----|
+| Frontend (production) | `https://solana-rwa-enterprise-bridge.vercel.app` |
+| Backend API (production) | `https://solana-rwa-enterprise-bridge.onrender.com/api` |
+| Backend health | `https://solana-rwa-enterprise-bridge.onrender.com/actuator/health` |
+| Solana RPC (Devnet) | `https://api.devnet.solana.com` |
+
+### Testing the desktop flow (Phantom extension)
+
+1. Open `https://solana-rwa-enterprise-bridge.vercel.app` in Chrome/Edge/Firefox with the [Phantom browser extension](https://phantom.app/) installed.
+2. The header shows **Connect Wallet**; clicking it invokes the Phantom provider's `connect()` and displays the truncated public key.
+3. Use **Asset Tokens**, **Investor KYC**, and **Audit Logs** to tokenize an asset, register an investor, and review the immutable audit trail.
+
+### Testing the mobile flow (Phantom universal deep link)
+
+1. Open the production URL in a **mobile browser** (Android/iOS).
+2. `SolanaWalletService.isMobileDevice()` detects the mobile user agent; when the Phantom extension is absent, the header renders **Connect via Phantom App** instead of **Install Phantom**.
+3. That button points to Phantom's official universal link:
+
+   ```
+   https://phantom.app/ul/browse/{encodeURIComponent(currentUrl)}?ref={encodeURIComponent(currentUrl)}
+   ```
+
+   which hands the dApp back to Phantom's **in-app browser** so users can connect the mobile wallet and interact with the SPA.
+
+> Read endpoints (`GET`) are intentionally public for the audit/ledger viewers. Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) require the shared `X-API-Key` header.
 
 ## Features & Endpoints
 
@@ -43,11 +83,12 @@ Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML co
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | `GET` | `/api/tokens` | List all asset tokens |
-| `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) |
+| `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) + write audit log |
 | `GET` | `/api/tokens/{id}` | Get token by UUID |
 | `GET` | `/api/investors` | List all registered investors |
 | `POST` | `/api/investors` | Register an investor (`{ fullName, email, walletAddress, country, kycStatus }`) |
-| `PATCH` | `/api/investors/{id}/status` | Update investor KYC status (`{ kycStatus }`) |
+| `GET` | `/api/investors/{id}` | Get investor by UUID |
+| `PATCH` | `/api/investors/{id}/status` | Update investor KYC status (`{ kycStatus }`) + audit log on `VERIFIED` |
 | `GET` | `/api/audit-logs` | List all immutable audit trail entries |
 | `POST` | `/api/v1/compliance/check` | Evaluate investor eligibility (off-chain KYC + on-chain wallet existence) |
 | `GET` | `/api/v1/compliance/audit-logs/{walletAddress}` | Compliance history for a specific wallet |
@@ -67,7 +108,7 @@ Located in [`backend/`](backend/).
 | Area | Choice |
 |------|--------|
 | Build | Maven (Java 21, Spring Boot 3.5.x) |
-| Dependencies | Spring Web, Spring Data JPA, PostgreSQL Driver, Lombok, Bean Validation |
+| Dependencies | Spring Web, Spring Data JPA, PostgreSQL Driver, Lombok, Bean Validation, Actuator |
 | Database (local) | PostgreSQL 16 via `docker-compose.yml` |
 | Database (production) | Neon Serverless PostgreSQL |
 | Config | `application.yml` — all secrets & endpoints injected from environment variables |
@@ -112,13 +153,13 @@ docker compose down       # stop (data persists)
 docker compose down -v    # stop + wipe volume
 ```
 
-## Frontend (Angular 18 / TypeScript)
+## Frontend (Angular 18+ / TypeScript)
 
 Located in [`frontend/`](frontend/).
 
 | Area | Choice |
 |------|--------|
-| Framework | Angular 18 (Standalone Components, no NgModule) |
+| Framework | Angular 18+ (Standalone Components, no NgModule) |
 | Styling | Tailwind CSS 3.4 (PostCSS + Autoprefixer) |
 | Web3 | `@solana/web3.js` (Phantom browser wallet integration) |
 | API | Render backend at `https://solana-rwa-enterprise-bridge.onrender.com/api` |
@@ -138,19 +179,23 @@ Or from the repo root:
 npm --prefix frontend start
 ```
 
-### Build for production
+### Build pipeline
 
-```bash
-npm --prefix frontend run build   # outputs to frontend/dist/frontend/
-```
+The Vercel build is driven by [`frontend/vercel.json`](frontend/vercel.json) — `buildCommand: "npm run build"` plus SPA rewrites (`/(.*)` → `/index.html`) for client-side routing.
 
-The `vercel.json` at the frontend root configures SPA rewrites (`/(.*)` → `/index.html`) for client-side routing.
+`npm run build` runs `ng build`, and the `prebuild` hook first executes [`scripts/generate-environment.js`](frontend/scripts/generate-environment.js):
+
+- Reads `SECURITY_API_KEY` from the build environment.
+- Bakes it into `src/environments/environment.prod.ts` (via Angular `fileReplacements`).
+- **Fails the build if `SECURITY_API_KEY` is missing**, so the `X-API-Key` gate can never be silently disabled in a deployed artifact.
+
+Set `SECURITY_API_KEY` in the Vercel project settings (or any build host) before deploying.
 
 ### API key injection (mutating routes)
 
 Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-API-Key` header. The Angular [`apiKeyInterceptor`](frontend/src/app/shared/interceptors/api-key.interceptor.ts) attaches this header on mutating requests only, sourcing the key from `environment.apiKey`.
 
-- **Production build:** `npm run build` runs `scripts/generate-environment.js` (via the `prebuild` hook), which reads `SECURITY_API_KEY` from the build environment, bakes it into `src/environments/environment.prod.ts`, and fails the build if the variable is missing. Vercel uses this command explicitly via `vercel.json` (`buildCommand`); set `SECURITY_API_KEY` in the Vercel project settings (or any build host).
+- **Production build:** `SECURITY_API_KEY` is injected at build time via `generate-environment.js` (see above).
 - **Local development:** `ng serve` (via `npm start`) uses the tracked `environment.development.ts`, which defaults `apiKey` to an empty string so read-only endpoints work without a key. To exercise mutating endpoints locally against the Render backend, either build with the production configuration (`npm run build`) to inject `SECURITY_API_KEY`, or temporarily set the `apiKey` field in `environment.development.ts` (do not commit a real key).
 
 ## Feature Status
@@ -163,8 +208,10 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
 | ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 21), `render.yaml` Blueprint, CORS for Vercel origins |
 | ✅ Done | Angular frontend UI scaffold: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
-| ✅ Done | Angular frontend feature implementation (Phase 4.2): Phantom wallet integration, tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter; 37 frontend specs GREEN |
-| ✅ Done | Vercel production deployment: SPA hosting with `vercel.json` rewrites, Angular build → `frontend/dist/frontend/` |
+| ✅ Done | Angular frontend feature implementation: Phantom wallet integration, tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter |
+| ✅ Done | Vercel production deployment: SPA hosting with `vercel.json` rewrites + build-time `SECURITY_API_KEY` injection |
+| ✅ Done | Security hardening: `X-API-Key` mutating-route gate, sanitized exception handling, actuator/CORS lockdown, typed domain exceptions |
+| ✅ Done | Mobile Phantom universal deep linking: `buildPhantomDeepLink()` redirects mobile users into Phantom's in-app browser |
 
 ## Render Deployment
 
@@ -194,7 +241,10 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 | Origin | Purpose |
 |--------|---------|
 | `https://*.vercel.app` | Vercel preview & production deployments |
+| `https://*.onrender.com` | Render preview & production deployments |
 | `http://localhost:4200` | Angular local development server |
+
+`allowedHeaders` is an explicit allowlist (`Origin`, `Content-Type`, `Accept`, `Authorization`, `X-API-Key`), and `X-API-Key` is registered as the mutating-route auth header.
 
 ## Test Counts
 
@@ -202,13 +252,13 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 41 |
 | Backend integration tests (`*IT.java`) | 44 |
-| Frontend specs | 41 |
+| Frontend specs | 42 |
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9) · `ApiKeyAuthInterceptorTest` (5)
 
 **Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `AssetTokenControllerIT` (4)
 
-**Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (11) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
+**Breakdown (frontend):** `AppComponent` (9) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (11) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 
