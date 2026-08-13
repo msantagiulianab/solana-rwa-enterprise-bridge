@@ -1,0 +1,93 @@
+package com.solana.rwa.bridge.solana;
+
+import com.solana.rwa.bridge.exception.SolanaRpcException;
+import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
+import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
+import org.springframework.stereotype.Service;
+
+import java.io.ByteArrayOutputStream;
+import java.util.List;
+
+/**
+ * Issues the on-chain SPL Token "InitializeMint" instruction on Solana Devnet.
+ *
+ * <p>Generates a fresh mint account keypair, compiles and signs the transaction,
+ * then submits it through the {@link SolanaRpcAdapter}. The resulting base58
+ * mint address is returned for persistence against the asset.
+ */
+@Service
+public class SolanaMintService {
+
+    /**
+     * SPL Token program id (the standard token program on all clusters).
+     */
+    public static final String TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+    /**
+     * Rent sysvar account, required by InitializeMint.
+     */
+    public static final String RENT_SYSVAR_ID = "SysvarRent111111111111111111111111111111111";
+
+    /**
+     * Decimals for minted real-world asset tokens.
+     */
+    public static final int RWA_TOKEN_DECIMALS = 6;
+
+    private static final int INITIALIZE_MINT_DISCRIMINATOR = 0;
+
+    private final SolanaRpcAdapter rpcAdapter;
+    private final SolanaKeypairService keypairService;
+    private final SolanaTransactionSerializer transactionSerializer;
+
+    public SolanaMintService(SolanaRpcAdapter rpcAdapter,
+                             SolanaKeypairService keypairService,
+                             SolanaTransactionSerializer transactionSerializer) {
+        this.rpcAdapter = rpcAdapter;
+        this.keypairService = keypairService;
+        this.transactionSerializer = transactionSerializer;
+    }
+
+    /**
+     * Creates an SPL Token mint account on Solana Devnet.
+     *
+     * @return base58 mint address of the newly created token mint
+     * @throws SolanaRpcException when the Devnet RPC layer fails
+     */
+    public String createMint() {
+        SolanaKeypair payer = keypairService.resolveKeypair();
+        SolanaKeypair mint = keypairService.generateKeypair();
+
+        byte[] mintPubkey = mint.getPublicKeyBytes();
+        byte[] payerPubkey = payer.getPublicKeyBytes();
+
+        SolanaInstruction initializeMint = new SolanaInstruction(
+                Base58Codec.decode(TOKEN_PROGRAM_ID),
+                List.of(
+                        new AccountMeta(mintPubkey, true, true),
+                        new AccountMeta(Base58Codec.decode(RENT_SYSVAR_ID), false, false)),
+                buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
+
+        LatestBlockhash latest = rpcAdapter.getLatestBlockhash();
+        String signedTransaction = transactionSerializer.serializeAndSign(
+                List.of(initializeMint),
+                latest.blockhash(),
+                List.of(payer, mint));
+
+        rpcAdapter.sendTransaction(signedTransaction);
+
+        return mint.getPublicKeyBase58();
+    }
+
+    private byte[] buildInitializeMintData(int decimals, byte[] mintAuthority, boolean freezeAuthoritySet) {
+        ByteArrayOutputStream data = new ByteArrayOutputStream();
+        data.write(INITIALIZE_MINT_DISCRIMINATOR);
+        data.write(decimals & 0xFF);
+        data.writeBytes(mintAuthority);
+        // COption<Pubkey>: 0 = None, 1 = Some followed by 32-byte authority.
+        data.write(freezeAuthoritySet ? 1 : 0);
+        if (freezeAuthoritySet) {
+            data.writeBytes(mintAuthority);
+        }
+        return data.toByteArray();
+    }
+}

@@ -3,6 +3,8 @@ package com.solana.rwa.bridge.rpc;
 import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.rpc.dto.AccountInfo;
 import com.solana.rwa.bridge.rpc.dto.AccountInfoResult;
+import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
+import com.solana.rwa.bridge.rpc.dto.LatestBlockhashResult;
 import com.solana.rwa.bridge.rpc.dto.RpcContext;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.RpcError;
@@ -86,6 +88,81 @@ class SolanaRpcAdapterTest {
     }
 
 
+
+    // ------------------------------------------------------------------
+    // getLatestBlockhash
+    // ------------------------------------------------------------------
+
+    @Test
+    void getLatestBlockhash_returnsParsedBlockhash() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<LatestBlockhashResult> envelope = new RpcEnvelope<>(
+                "2.0",
+                new LatestBlockhashResult(new RpcContext(42L),
+                        new LatestBlockhash("6xPfXFhpREB8cWcGVFr9Eevf8K6sL1yV3z7pMggNfcUx", 999L)),
+                null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        LatestBlockhash blockhash = adapter.getLatestBlockhash();
+
+        assertThat(blockhash.blockhash()).isEqualTo("6xPfXFhpREB8cWcGVFr9Eevf8K6sL1yV3z7pMggNfcUx");
+        assertThat(blockhash.lastValidBlockHeight()).isEqualTo(999L);
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(bodySpec).body(bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
+        assertThat(payload).containsEntry("method", "getLatestBlockhash");
+    }
+
+    @Test
+    void getLatestBlockhash_throwsSolanaRpcExceptionOnNullResult() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<LatestBlockhashResult> envelope = new RpcEnvelope<>(
+                "2.0", new LatestBlockhashResult(new RpcContext(1L), null), null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        assertThatThrownBy(() -> adapter.getLatestBlockhash())
+                .isInstanceOf(SolanaRpcException.class)
+                .hasMessageContaining("getLatestBlockhash");
+    }
+
+    // ------------------------------------------------------------------
+    // sendTransaction
+    // ------------------------------------------------------------------
+
+    @Test
+    void sendTransaction_returnsTransactionSignature() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<String> envelope = new RpcEnvelope<>(
+                "2.0", "4xSgnSignatureabcdefghijkmnopqrstuvwxyz", null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        String signature = adapter.sendTransaction("base58tx");
+
+        assertThat(signature).isEqualTo("4xSgnSignatureabcdefghijkmnopqrstuvwxyz");
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(bodySpec).body(bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
+        assertThat(payload).containsEntry("method", "sendTransaction");
+    }
+
+    @Test
+    void sendTransaction_throwsSolanaRpcExceptionOnNullSignature() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<String> envelope = new RpcEnvelope<>("2.0", null, null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        assertThatThrownBy(() -> adapter.sendTransaction("base58tx"))
+                .isInstanceOf(SolanaRpcException.class)
+                .hasMessageContaining("sendTransaction");
+    }
 
     // ------------------------------------------------------------------
     // getAccountInfo

@@ -3,6 +3,8 @@ package com.solana.rwa.bridge.rpc;
 import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.rpc.dto.AccountInfo;
 import com.solana.rwa.bridge.rpc.dto.AccountInfoResult;
+import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
+import com.solana.rwa.bridge.rpc.dto.LatestBlockhashResult;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalance;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalanceResult;
@@ -66,6 +68,61 @@ public class SolanaRpcAdapter {
                     + envelope.error().code() + " (" + envelope.error().message() + ")");
         }
         return envelope.result().valueOrAbsent();
+    }
+
+    /**
+     * Queries the current Devnet recent blockhash and last valid block height.
+     *
+     * @return parsed recent blockhash to be embedded into a transaction message
+     * @throws SolanaRpcException on network failure, HTTP error, or malformed/error response
+     */
+    public LatestBlockhash getLatestBlockhash() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("jsonrpc", JSONRPC_VERSION);
+        params.put("method", "getLatestBlockhash");
+        params.put("id", requestId.getAndIncrement());
+        params.put("params", List.of(Map.of("commitment", "confirmed")));
+
+        RpcEnvelope<LatestBlockhashResult> envelope = call(
+                "getLatestBlockhash", params, new ParameterizedTypeReference<>() {
+                });
+        if (envelope.hasError()) {
+            throw new SolanaRpcException("Solana RPC call 'getLatestBlockhash' failed: JSON-RPC error "
+                    + envelope.error().code() + " (" + envelope.error().message() + ")");
+        }
+        if (envelope.result() == null || envelope.result().value() == null) {
+            throw new SolanaRpcException("Solana RPC call 'getLatestBlockhash' failed: node returned a null result");
+        }
+        return envelope.result().value();
+    }
+
+    /**
+     * Submits a fully-signed base58 transaction to the Devnet node.
+     *
+     * @param base58Transaction serialized signed transaction payload
+     * @return base58 transaction signature confirmed accepted by the node
+     * @throws SolanaRpcException on network failure, HTTP error, or malformed/error response
+     */
+    public String sendTransaction(String base58Transaction) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("jsonrpc", JSONRPC_VERSION);
+        params.put("method", "sendTransaction");
+        params.put("id", requestId.getAndIncrement());
+        params.put("params", List.of(
+                base58Transaction,
+                Map.of("encoding", "base58", "preflightCommitment", "confirmed")));
+
+        RpcEnvelope<String> envelope = call(
+                "sendTransaction", params, new ParameterizedTypeReference<>() {
+                });
+        if (envelope.hasError()) {
+            throw new SolanaRpcException("Solana RPC call 'sendTransaction' failed: JSON-RPC error "
+                    + envelope.error().code() + " (" + envelope.error().message() + ")");
+        }
+        if (envelope.result() == null || envelope.result().isBlank()) {
+            throw new SolanaRpcException("Solana RPC call 'sendTransaction' failed: node returned a null signature");
+        }
+        return envelope.result();
     }
 
     /**

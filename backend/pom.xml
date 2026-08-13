@@ -67,6 +67,17 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            Pure-Java Ed25519 (EdDSA) implementation used to generate/sign
+            Solana keypairs for on-chain mint creation. Only the public
+            dependency is required at runtime; all signing stays in the backend.
+        -->
+        <dependency>
+            <groupId>net.i2p.crypto</groupId>
+            <artifactId>eddsa</artifactId>
+            <version>0.3.0</version>
+        </dependency>
+
         <!-- H2: embedded PostgreSQL-compatible database for @DataJpaTest integration tests -->
         <dependency>
             <groupId>com.h2database</groupId>

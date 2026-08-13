@@ -49,6 +49,7 @@ class AssetTokenControllerIT {
         AssetToken token = AssetToken.builder()
                 .assetName("Prime Manhattan Office Fund")
                 .valuationUsd(new BigDecimal("125000000.00"))
+                .mintAddress("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
                 .complianceStatus(AssetTokenComplianceStatus.NON_COMPLIANT)
                 .build();
 
@@ -65,6 +66,7 @@ class AssetTokenControllerIT {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assetName").value("Prime Manhattan Office Fund"))
+                .andExpect(jsonPath("$.mintAddress").value("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))
                 .andExpect(jsonPath("$.complianceStatus").value("NON_COMPLIANT"));
 
         verify(auditLogRepository).save(any());

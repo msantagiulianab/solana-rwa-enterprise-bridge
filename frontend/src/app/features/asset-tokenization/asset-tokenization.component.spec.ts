@@ -80,6 +80,51 @@ describe('AssetTokenizationComponent', () => {
     expect(rows[0].textContent).toContain('Luxury Real Estate Token');
   });
 
+  it('should render a clickable Devnet explorer link for a valid mint address', () => {
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/tokens`);
+    req.flush(mockTokens);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const link = compiled.querySelector('tbody tr a[href]') as HTMLAnchorElement | null;
+
+    expect(link).toBeTruthy();
+    expect(link!.getAttribute('href')).toBe(
+      'https://explorer.solana.com/address/TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA?cluster=devnet'
+    );
+    expect(link!.getAttribute('target')).toBe('_blank');
+    expect(link!.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link!.textContent).toContain('...');
+  });
+
+  it('should display Pending for a missing or invalid mint address', () => {
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/tokens`);
+    req.flush(mockTokens);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const rows = compiled.querySelectorAll('tbody tr');
+    expect(rows[0].textContent).toContain('Pending...');
+  });
+
+  it('should validate Solana base58 mint addresses', () => {
+    expect(component.isValidMintAddress('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')).toBeTrue();
+    expect(component.isValidMintAddress('Pending...')).toBeFalse();
+    expect(component.isValidMintAddress(null)).toBeFalse();
+    expect(component.isValidMintAddress(undefined)).toBeFalse();
+    expect(component.isValidMintAddress('0OIl')).toBeFalse();
+  });
+
+  it('should build a truncated mint address', () => {
+    const mint = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+    expect(component.truncateMintAddress(mint)).toBe('Tokenk...3VQ5DA');
+    expect(component.truncateMintAddress('short')).toBe('short');
+  });
+
   it('should display error message on API failure', () => {
     fixture.detectChanges();
 

@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { BackendApiService } from '../../shared/services/backend-api.service';
 import { AssetToken, CreateAssetTokenRequest } from '../../shared/models/asset-token.model';
 
+const BASE58_PATTERN = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}$/;
+
 @Component({
   selector: 'app-asset-tokenization',
   standalone: true,
@@ -28,6 +30,32 @@ export class AssetTokenizationComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadTokens();
+  }
+
+  /**
+   * Returns true when the mint address is a syntactically valid base58 Solana
+   * public key (32-44 chars, canonical alphabet) rather than a pending/absent
+   * placeholder value.
+   */
+  isValidMintAddress(mintAddress: string | null | undefined): boolean {
+    return typeof mintAddress === 'string' && BASE58_PATTERN.test(mintAddress);
+  }
+
+  /**
+   * Builds the Solana Devnet explorer link for a mint address.
+   */
+  explorerUrl(mintAddress: string): string {
+    return `https://explorer.solana.com/address/${mintAddress}?cluster=devnet`;
+  }
+
+  /**
+   * Truncates the mint address for compact display.
+   */
+  truncateMintAddress(mintAddress: string): string {
+    if (mintAddress.length <= 12) {
+      return mintAddress;
+    }
+    return `${mintAddress.slice(0, 6)}...${mintAddress.slice(-6)}`;
   }
 
   loadTokens(): void {

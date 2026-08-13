@@ -52,7 +52,18 @@
         <tr *ngFor="let token of tokens" class="bg-solana-darker hover:bg-gray-800 transition-colors">
           <td class="px-6 py-4 font-medium text-white">{{ token.assetName }}</td>
           <td class="px-6 py-4 text-gray-300">{{ token.valuationUsd | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="px-6 py-4 font-mono text-xs text-gray-400">{{ token.mintAddress || 'Pending...' }}</td>
+          <td class="px-6 py-4 font-mono text-xs text-gray-400">
+            <a
+              *ngIf="isValidMintAddress(token.mintAddress); else pendingMint"
+              [href]="explorerUrl(token.mintAddress!)"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-solana-purple hover:text-purple-400 underline truncate"
+            >
+              {{ truncateMintAddress(token.mintAddress!) }}
+            </a>
+            <ng-template #pendingMint>Pending...</ng-template>
+          </td>
           <td class="px-6 py-4">
             <span [class]="statusColor(token.complianceStatus)" class="font-semibold">
               {{ token.complianceStatus }}

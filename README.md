@@ -83,7 +83,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | `GET` | `/api/tokens` | List all asset tokens |
-| `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) + write audit log |
+ | `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) + write audit log + issue on-chain SPL mint |
 | `GET` | `/api/tokens/{id}` | Get token by UUID |
 | `GET` | `/api/investors` | List all registered investors |
 | `POST` | `/api/investors` | Register an investor (`{ fullName, email, walletAddress, country, kycStatus }`) |
@@ -205,7 +205,8 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Spring Boot 3 backend: env-driven config, PostgreSQL via Docker Compose |
 | ✅ Done | JPA domain layer: `Investor`, `AssetToken`, `AuditLog` entities + Spring Data JPA repositories |
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/investors` REST controllers, `GlobalExceptionHandler` |
-| ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
+ | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`, `getLatestBlockhash`, `sendTransaction`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
+ | ✅ Done | On-chain token minting: `SolanaMintService` issues a real SPL Token `InitializeMint` on Devnet (Ed25519 keypair generation/signing + base58 transaction serialization), persists the mint address to `AssetToken.mintAddress`, and links it in the frontend |
 | ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 21), `render.yaml` Blueprint, CORS for Vercel origins |
 | ✅ Done | Angular frontend UI scaffold: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
 | ✅ Done | Angular frontend feature implementation: Phantom wallet integration, tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter |
@@ -250,15 +251,15 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 41 |
-| Backend integration tests (`*IT.java`) | 44 |
-| Frontend specs | 42 |
+ | Backend unit tests (`*Test.java`) | 47 |
+ | Backend integration tests (`*IT.java`) | 44 |
+ | Frontend specs | 46 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9) · `ApiKeyAuthInterceptorTest` (5)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (13) · `ComplianceDtosValidationTest` (7) · `SolanaAddressValidatorTest` (5) · `ApiKeyAuthInterceptorTest` (5) · `TokenServiceTest` (1) · `SolanaMintServiceTest` (1)
 
 **Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `AssetTokenControllerIT` (4)
 
-**Breakdown (frontend):** `AppComponent` (9) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (11) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
+**Breakdown (frontend):** `AppComponent` (9) · `AuditLogComponent` (11) · `AssetTokenizationComponent` (12) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 

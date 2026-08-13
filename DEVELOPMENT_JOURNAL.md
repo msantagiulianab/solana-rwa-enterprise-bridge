@@ -439,5 +439,64 @@ universal-link hand-off alongside the existing desktop extension flow.
   environment files.
 
 **Tests:**
-- `AppComponent` (8 → 9) adds the mobile deep-link rendering spec.
-- `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **42/42 SUCCESS**.
+ - `AppComponent` (8 → 9) adds the mobile deep-link rendering spec.
+ - `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **42/42 SUCCESS**.
+
+---
+
+### Post-Phase 5 (Step 6): Real Devnet SPL Token Minting (GREEN: 91 backend + 46 frontend)
+
+**Plan:** Replace the off-chain-only asset tokenization flow with a real on-chain SPL Token
+`InitializeMint` on Solana Devnet — generate/sign an Ed25519 keypair in the backend, issue the
+mint instruction through the existing `SolanaRpcAdapter`, persist the base58 mint address to
+`AssetToken.mintAddress`, and surface it as a clickable explorer link in the Angular dashboard.
+
+**Implementation (backend):**
+- Added pure-Java Ed25519 support via `net.i2p.crypto:eddsa:0.3.0` (runtime dependency) and a new
+  `solana` package:
+  - `Base58Codec` — canonical Bitcoin/Solana base58 encode/decode used for keys, blockhashes, and
+    serialized transactions.
+  - `SolanaKeypair` / `SolanaKeypairService` — derive a payer from `SOLANA_DEVNET_PRIVATE_KEY`
+    (base58 32-byte seed) or generate ephemeral; generate a fresh random mint keypair; sign the
+    serialized transaction message with the `EdDSAEngine`.
+  - `AccountMeta`, `SolanaInstruction`, `SolanaTransactionSerializer` — compile accounts, serialize
+    the legacy (non-versioned) transaction message (header + compact account list + recent
+    blockhash + instruction data), sign, and base58-encode the signed transaction.
+  - `SolanaMintService` — builds the SPL Token `InitializeMint` instruction (program
+    `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, rent sysvar, 6 decimals, payer mint authority),
+    fetches `getLatestBlockhash`, signs with payer + mint keypairs, and submits via
+    `sendTransaction`.
+- Extended `SolanaRpcAdapter` with `getLatestBlockhash()` and `sendTransaction(base58Tx)` plus
+  matching JSON-RPC DTOs (`LatestBlockhash`, `LatestBlockhashResult`).
+- `TokenService.create` now calls `SolanaMintService.createMint()` before persisting the asset, so
+  `POST /api/tokens` returns the asset with a real active `mintAddress` (no "Pending..." fallback).
+
+**Implementation (frontend):**
+- `AssetTokenizationComponent` now renders a valid base58 mint address as a truncated clickable
+  link to `https://explorer.solana.com/address/<mint>?cluster=devnet` with
+  `target="_blank" rel="noopener noreferrer"`; invalid/missing addresses still show `Pending...`.
+
+**Tests:**
+- `SolanaRpcAdapterTest` expanded 9 → 13 (new `getLatestBlockhash`/`sendTransaction` success and
+  null/error cases).
+- `TokenServiceTest` (1) — mocks `SolanaMintService` and asserts the returned mint address is
+  persisted.
+- `SolanaMintServiceTest` (1) — mocks only the RPC adapter; the real keypair + transaction
+  serializer exercise the sign-and-submit pipeline offline.
+- `AssetTokenControllerIT` asserts `mintAddress` in the response payload.
+- `AssetTokenizationComponent` specs expanded 8 → 12 (link rendering, Pending fallback, base58
+  validation, truncation).
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **91 tests, 0 failures, 0 errors**
+  (47 unit + 44 integration).
+- Frontend: `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **46/46 SUCCESS**.
+
+**Decisions:**
+- Real keypair generation+signing runs in-process in the backend using a pure-Java Ed25519
+  provider; the browser wallet is not required for mint issuance, and no private key is ever
+  logged or persisted.
+- Unit/integration tests mock only `SolanaRpcAdapter`; keypair/transaction/serialization logic is
+  verified through the real implementation offline, keeping the build fast and network-free.
+- On-chain mint happens before the off-chain registry row is saved so a failed RPC call aborts the
+  tokenization rather than recording an asset without a verifiable mint address.
