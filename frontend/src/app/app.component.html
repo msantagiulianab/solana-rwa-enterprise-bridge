@@ -64,14 +64,24 @@
                 {{ walletConnecting ? 'Connecting...' : 'Connect Wallet' }}
               </button>
               <ng-template #installPhantom>
-                <a
-                  href="https://phantom.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="px-4 py-2 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
-                >
-                  Install Phantom
-                </a>
+                <ng-container *ngIf="isMobileDevice(); else desktopInstall">
+                  <a
+                    [href]="buildPhantomDeepLink()"
+                    class="px-4 py-2 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
+                  >
+                    Connect via Phantom App
+                  </a>
+                </ng-container>
+                <ng-template #desktopInstall>
+                  <a
+                    href="https://phantom.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="px-4 py-2 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
+                  >
+                    Install Phantom
+                  </a>
+                </ng-template>
               </ng-template>
             </ng-template>
           </div>
@@ -145,14 +155,24 @@
                 {{ walletConnecting ? 'Connecting...' : 'Connect Wallet' }}
               </button>
               <ng-template #mobileInstallPhantom>
-                <a
-                  href="https://phantom.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="block w-full text-center px-4 py-2.5 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
-                >
-                  Install Phantom
-                </a>
+                <ng-container *ngIf="isMobileDevice(); else mobileInstallPhantomDesktop">
+                  <a
+                    [href]="buildPhantomDeepLink()"
+                    class="block w-full text-center px-4 py-2.5 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
+                  >
+                    Connect via Phantom App
+                  </a>
+                </ng-container>
+                <ng-template #mobileInstallPhantomDesktop>
+                  <a
+                    href="https://phantom.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="block w-full text-center px-4 py-2.5 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
+                  >
+                    Install Phantom
+                  </a>
+                </ng-template>
               </ng-template>
             </ng-template>
           </div>

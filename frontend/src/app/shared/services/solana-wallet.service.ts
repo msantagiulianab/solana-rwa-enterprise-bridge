@@ -49,6 +49,28 @@ export class SolanaWalletService {
   }
 
   /**
+   * Returns true when the app is running on a mobile browser.
+   */
+  isMobileDevice(): boolean {
+    if (!this.isBrowser) {
+      return false;
+    }
+    return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(
+      window.navigator.userAgent
+    );
+  }
+
+  /**
+   * Builds Phantom's official browse universal link so mobile users are
+   * redirected into Phantom's in-app browser tab with the dApp loaded.
+   */
+  buildPhantomDeepLink(): string {
+    const currentUrl = window.location.href;
+    const encodedUrl = encodeURIComponent(currentUrl);
+    return `https://phantom.app/ul/browse/${encodedUrl}?ref=${encodedUrl}`;
+  }
+
+  /**
    * Connects to the Phantom / Solana wallet provider.
    * On success the connected public key is emitted via connectedPublicKey$.
    */

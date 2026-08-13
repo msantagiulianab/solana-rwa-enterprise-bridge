@@ -15,13 +15,24 @@ describe('AppComponent', () => {
 
     walletServiceMock = jasmine.createSpyObj<SolanaWalletService>(
       'SolanaWalletService',
-      ['isPhantomInstalled', 'connectWallet', 'disconnectWallet', 'getConnectedPublicKey'],
+      [
+        'isPhantomInstalled',
+        'isMobileDevice',
+        'buildPhantomDeepLink',
+        'connectWallet',
+        'disconnectWallet',
+        'getConnectedPublicKey',
+      ],
       {
         connectedPublicKey$: connectedPublicKeySubject.asObservable(),
       }
     );
 
     walletServiceMock.isPhantomInstalled.and.returnValue(false);
+    walletServiceMock.isMobileDevice.and.returnValue(false);
+    walletServiceMock.buildPhantomDeepLink.and.returnValue(
+      'https://phantom.app/ul/browse/test'
+    );
     walletServiceMock.getConnectedPublicKey.and.returnValue(null);
 
     await TestBed.configureTestingModule({
@@ -63,6 +74,24 @@ describe('AppComponent', () => {
     const installLink = compiled.querySelector('a[href="https://phantom.app/"]');
     expect(installLink).toBeTruthy();
     expect(installLink?.textContent).toContain('Install Phantom');
+  });
+
+  it('should show Connect via Phantom App button when on mobile and phantom is not installed', () => {
+    walletServiceMock.isPhantomInstalled.and.returnValue(false);
+    walletServiceMock.isMobileDevice.and.returnValue(true);
+    walletServiceMock.buildPhantomDeepLink.and.returnValue(
+      'https://phantom.app/ul/browse/https%3A%2F%2Fexample.com%3Fref%3Dhttps%253A%252F%252Fexample.com'
+    );
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const phantomAppLinks = Array.from(compiled.querySelectorAll('a')).filter((a) =>
+      a.textContent?.includes('Connect via Phantom App')
+    );
+    expect(phantomAppLinks.length).toBeGreaterThan(0);
+    expect(phantomAppLinks[0]?.getAttribute('href')).toContain(
+      'https://phantom.app/ul/browse/'
+    );
   });
 
   it('should show Connect Wallet button when phantom is installed but not connected', () => {

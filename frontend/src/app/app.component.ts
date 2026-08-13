@@ -30,6 +30,14 @@ export class AppComponent implements OnInit {
     return this.walletService.isPhantomInstalled();
   }
 
+  isMobileDevice(): boolean {
+    return this.walletService.isMobileDevice();
+  }
+
+  buildPhantomDeepLink(): string {
+    return this.walletService.buildPhantomDeepLink();
+  }
+
   async connectWallet(): Promise<void> {
     this.walletConnecting = true;
     this.walletError = null;
