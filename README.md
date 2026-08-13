@@ -146,6 +146,13 @@ npm --prefix frontend run build   # outputs to frontend/dist/frontend/
 
 The `vercel.json` at the frontend root configures SPA rewrites (`/(.*)` → `/index.html`) for client-side routing.
 
+### API key injection (mutating routes)
+
+Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-API-Key` header. The Angular [`apiKeyInterceptor`](frontend/src/app/shared/interceptors/api-key.interceptor.ts) attaches this header on mutating requests only, sourcing the key from `environment.apiKey`.
+
+- **Production build:** `npm run build` runs `scripts/generate-environment.js` (via the `prebuild` hook), which reads `SECURITY_API_KEY` from the build environment, bakes it into `src/environments/environment.prod.ts`, and fails the build if the variable is missing. Vercel uses this command explicitly via `vercel.json` (`buildCommand`); set `SECURITY_API_KEY` in the Vercel project settings (or any build host).
+- **Local development:** `ng serve` (via `npm start`) uses the tracked `environment.development.ts`, which defaults `apiKey` to an empty string so read-only endpoints work without a key. To exercise mutating endpoints locally against the Render backend, either build with the production configuration (`npm run build`) to inject `SECURITY_API_KEY`, or temporarily set the `apiKey` field in `environment.development.ts` (do not commit a real key).
+
 ## Feature Status
 
 | Status | Feature |

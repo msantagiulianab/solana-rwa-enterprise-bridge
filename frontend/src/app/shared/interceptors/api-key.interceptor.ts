@@ -6,8 +6,9 @@ import { environment } from '../../../environments/environment';
  * (POST/PATCH/PUT/DELETE), matching the backend's authentication gate.
  *
  * <p>The key is sourced from the build-time environment ({@code environment.apiKey})
- * and is never hardcoded in component logic. Read-only requests (GET/HEAD/OPTIONS)
- * are left untouched because the audit/ledger endpoints remain public.
+ * and is never hardcoded in component logic, nor logged to the console. Read-only
+ * requests (GET/HEAD/OPTIONS) are left untouched because the audit/ledger
+ * endpoints remain public.
  */
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
@@ -16,7 +17,6 @@ export const apiKeyInterceptor: HttpInterceptorFn = (
   next: HttpHandlerFn
 ) => {
   if (MUTATING_METHODS.has(req.method) && environment.apiKey) {
-    console.log('Sending X-API-Key:', environment.apiKey);
     const cloned = req.clone({
       setHeaders: { 'X-API-Key': environment.apiKey },
     });
