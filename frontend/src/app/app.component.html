@@ -3,13 +3,14 @@
   <nav class="bg-solana-dark border-b border-gray-800">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
-        <div class="flex items-center space-x-3">
-          <span class="text-xl font-bold text-white tracking-tight">
+        <div class="flex items-center min-w-0">
+          <span class="text-lg sm:text-xl font-bold text-white tracking-tight truncate">
             Solana RWA Enterprise Bridge
           </span>
         </div>
 
-        <div class="flex items-center space-x-3">
+        <!-- Desktop controls -->
+        <div class="hidden md:flex items-center space-x-3">
           <!-- Nav Links -->
           <div class="flex space-x-1">
             <a
@@ -68,6 +69,87 @@
                   target="_blank"
                   rel="noopener noreferrer"
                   class="px-4 py-2 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
+                >
+                  Install Phantom
+                </a>
+              </ng-template>
+            </ng-template>
+          </div>
+        </div>
+
+        <!-- Mobile menu button -->
+        <div class="md:hidden">
+          <button
+            (click)="toggleMenu()"
+            class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            aria-label="Toggle navigation menu"
+          >
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path *ngIf="!isMenuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+              <path *ngIf="isMenuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile menu -->
+      <div *ngIf="isMenuOpen" class="md:hidden pb-4">
+        <div class="flex flex-col space-y-1 pt-2 border-t border-gray-800">
+          <a
+            routerLink="/tokens"
+            routerLinkActive="bg-solana-purple/20 text-solana-purple"
+            (click)="closeMenu()"
+            class="px-4 py-3 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            Asset Tokens
+          </a>
+          <a
+            routerLink="/investors"
+            routerLinkActive="bg-solana-purple/20 text-solana-purple"
+            (click)="closeMenu()"
+            class="px-4 py-3 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            Investor KYC
+          </a>
+          <a
+            routerLink="/audit-logs"
+            routerLinkActive="bg-solana-purple/20 text-solana-purple"
+            (click)="closeMenu()"
+            class="px-4 py-3 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          >
+            Audit Logs
+          </a>
+
+          <!-- Mobile wallet section -->
+          <div class="pt-3 border-t border-gray-800">
+            <ng-container *ngIf="walletPublicKey; else mobileConnectBtn">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs text-green-400 font-mono truncate" [title]="walletPublicKey">
+                  {{ walletPublicKey | slice:0:4 }}...{{ walletPublicKey | slice:-4 }}
+                </span>
+                <button
+                  (click)="disconnectWallet()"
+                  class="px-3 py-1.5 border border-red-500/40 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+            </ng-container>
+            <ng-template #mobileConnectBtn>
+              <button
+                *ngIf="isPhantomInstalled(); else mobileInstallPhantom"
+                (click)="connectWallet()"
+                [disabled]="walletConnecting"
+                class="w-full px-4 py-2.5 bg-solana-purple hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium text-white transition-colors"
+              >
+                {{ walletConnecting ? 'Connecting...' : 'Connect Wallet' }}
+              </button>
+              <ng-template #mobileInstallPhantom>
+                <a
+                  href="https://phantom.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block w-full text-center px-4 py-2.5 border border-solana-purple/50 rounded text-sm font-medium text-solana-purple hover:bg-solana-purple/10 transition-colors"
                 >
                   Install Phantom
                 </a>

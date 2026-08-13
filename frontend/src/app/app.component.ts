@@ -16,6 +16,7 @@ export class AppComponent implements OnInit {
   walletPublicKey: string | null = null;
   walletConnecting = false;
   walletError: string | null = null;
+  isMenuOpen = false;
 
   constructor(private readonly walletService: SolanaWalletService) {}
 
@@ -48,5 +49,13 @@ export class AppComponent implements OnInit {
     } catch {
       // ignore disconnect errors
     }
+  }
+
+  toggleMenu(): void {
+    this.isMenuOpen = !this.isMenuOpen;
+  }
+
+  closeMenu(): void {
+    this.isMenuOpen = false;
   }
 }
