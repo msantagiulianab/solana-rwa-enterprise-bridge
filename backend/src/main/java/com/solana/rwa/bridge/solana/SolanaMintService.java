@@ -3,7 +3,10 @@ package com.solana.rwa.bridge.solana;
 import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
 import java.util.List;
@@ -15,6 +18,7 @@ import java.util.List;
  * then submits it through the {@link SolanaRpcAdapter}. The resulting base58
  * mint address is returned for persistence against the asset.
  */
+@Slf4j
 @Service
 public class SolanaMintService {
 
@@ -54,28 +58,34 @@ public class SolanaMintService {
      * @throws SolanaRpcException when the Devnet RPC layer fails
      */
     public String createMint() {
-        SolanaKeypair payer = keypairService.resolveKeypair();
-        SolanaKeypair mint = keypairService.generateKeypair();
+        try {
+            SolanaKeypair payer = keypairService.resolveKeypair();
+            SolanaKeypair mint = keypairService.generateKeypair();
 
-        byte[] mintPubkey = mint.getPublicKeyBytes();
-        byte[] payerPubkey = payer.getPublicKeyBytes();
+            byte[] mintPubkey = mint.getPublicKeyBytes();
+            byte[] payerPubkey = payer.getPublicKeyBytes();
 
-        SolanaInstruction initializeMint = new SolanaInstruction(
-                Base58Codec.decode(TOKEN_PROGRAM_ID),
-                List.of(
-                        new AccountMeta(mintPubkey, true, true),
-                        new AccountMeta(Base58Codec.decode(RENT_SYSVAR_ID), false, false)),
-                buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
+            SolanaInstruction initializeMint = new SolanaInstruction(
+                    Base58Codec.decode(TOKEN_PROGRAM_ID),
+                    List.of(
+                            new AccountMeta(mintPubkey, true, true),
+                            new AccountMeta(Base58Codec.decode(RENT_SYSVAR_ID), false, false)),
+                    buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
 
-        LatestBlockhash latest = rpcAdapter.getLatestBlockhash();
-        String signedTransaction = transactionSerializer.serializeAndSign(
-                List.of(initializeMint),
-                latest.blockhash(),
-                List.of(payer, mint));
+            LatestBlockhash latest = rpcAdapter.getLatestBlockhash();
+            String signedTransaction = transactionSerializer.serializeAndSign(
+                    List.of(initializeMint),
+                    latest.blockhash(),
+                    List.of(payer, mint));
 
-        rpcAdapter.sendTransaction(signedTransaction);
+            rpcAdapter.sendTransaction(signedTransaction);
 
-        return mint.getPublicKeyBase58();
+            return mint.getPublicKeyBase58();
+        } catch (Exception ex) {
+            log.error("Failed to create SPL Token mint on Devnet", ex);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Solana Devnet Mint Error: " + ex.getMessage(), ex);
+        }
     }
 
     private byte[] buildInitializeMintData(int decimals, byte[] mintAuthority, boolean freezeAuthoritySet) {

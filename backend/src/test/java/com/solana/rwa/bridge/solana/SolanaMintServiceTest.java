@@ -1,5 +1,6 @@
 package com.solana.rwa.bridge.solana;
 
+import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,8 +9,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,5 +56,18 @@ class SolanaMintServiceTest {
 
         verify(rpcAdapter).getLatestBlockhash();
         verify(rpcAdapter).sendTransaction(ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void createMint_wrapsRpcFailureAsBadRequest() {
+        when(rpcAdapter.getLatestBlockhash())
+                .thenThrow(new SolanaRpcException("getLatestBlockhash", new RuntimeException("Read timed out")));
+
+        assertThatThrownBy(() -> mintService.createMint())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Solana Devnet Mint Error: ")
+                .hasMessageContaining("Read timed out")
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.BAD_REQUEST));
     }
 }

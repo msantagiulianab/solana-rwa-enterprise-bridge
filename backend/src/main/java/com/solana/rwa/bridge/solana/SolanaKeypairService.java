@@ -7,7 +7,10 @@ import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable;
 import net.i2p.crypto.eddsa.spec.EdDSAParameterSpec;
 import net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec;
 import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -23,6 +26,7 @@ import java.util.Arrays;
  * Ed25519 provider, so no live Devnet node or wallet provider is involved at
  * key-generation time.
  */
+@Slf4j
 @Service
 public class SolanaKeypairService {
 
@@ -58,6 +62,23 @@ public class SolanaKeypairService {
             return fromSeed(seed);
         }
         return fromSeed(ephemeralSeed.clone());
+    }
+
+    /**
+     * Logs the derived Devnet fee payer public key at startup so operators can
+     * fund it before attempting any on-chain mint.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void logFeePayerAddress() {
+        try {
+            String payer = resolveKeypair().getPublicKeyBase58();
+            log.info("===========================================================");
+            log.info("SOLANA DEVNET FEE PAYER PUBLIC KEY: {}", payer);
+            log.info("Ensure this wallet has Devnet SOL via https://faucet.solana.com");
+            log.info("===========================================================");
+        } catch (Exception ex) {
+            log.warn("Could not derive Solana Devnet fee payer address", ex);
+        }
     }
 
     /**

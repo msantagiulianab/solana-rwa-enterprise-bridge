@@ -498,5 +498,34 @@ mint instruction through the existing `SolanaRpcAdapter`, persist the base58 min
   logged or persisted.
 - Unit/integration tests mock only `SolanaRpcAdapter`; keypair/transaction/serialization logic is
   verified through the real implementation offline, keeping the build fast and network-free.
-- On-chain mint happens before the off-chain registry row is saved so a failed RPC call aborts the
-  tokenization rather than recording an asset without a verifiable mint address.
+ - On-chain mint happens before the off-chain registry row is saved so a failed RPC call aborts the
+   tokenization rather than recording an asset without a verifiable mint address.
+
+---
+
+### Post-Phase 5 (Step 7): Hardening Devnet Mint Error Handling & Fee-Payer Logging (GREEN: 92 backend)
+
+**Plan:** Surface actionable Devnet mint failures and expose the fee-payer address so operators can
+fund the wallet before attempting on-chain tokenization.
+
+**Implementation:**
+- `SolanaKeypairService.logFeePayerAddress()` — `@EventListener(ApplicationReadyEvent.class)`
+  logs the derived payer public key at INFO level, including the
+  `https://faucet.solana.com` funding hint (wrapped in a defensive try/catch that degrades to a
+  warning if derivation fails).
+- `SolanaMintService.createMint()` — wraps blockhash fetch, serialization, signing, and submission
+  in a try/catch; logs the full stack trace via `log.error(...)` and re-throws a
+  `ResponseStatusException(HttpStatus.BAD_REQUEST, "Solana Devnet Mint Error: " + e.getMessage())`.
+- `GlobalExceptionHandler` — added a `ResponseStatusException` handler mapping it to its native
+  status (400) so the actual Devnet error detail reaches the API response instead of the generic
+  500 fallback.
+
+**Tests:**
+- `SolanaMintServiceTest` (1 → 2) adds `createMint_wrapsRpcFailureAsBadRequest`, asserting a
+  `SolanaRpcException` becomes a BAD_REQUEST `ResponseStatusException` with the original message.
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **92 tests, 0 failures, 0 errors**
+  (48 unit + 44 integration).
+
+**Decisions:**
+- Keep the error mapping at the `SolanaMintService` boundary; controller/repository layers stay
+  unchanged, and the `GlobalExceptionHandler` already sanitizes unexpected 500s.
