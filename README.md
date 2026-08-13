@@ -194,14 +194,14 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 | Suite | Count |
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 41 |
-| Backend integration tests (`*IT.java`) | 41 |
-| Frontend specs | 39 |
+| Backend integration tests (`*IT.java`) | 44 |
+| Frontend specs | 41 |
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaAddressValidatorTest` (5) · `ComplianceDtosValidationTest` (7) · `SolanaRpcAdapterTest` (9) · `ApiKeyAuthInterceptorTest` (5)
 
-**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (7) · `AssetTokenControllerIT` (4)
+**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `AssetTokenControllerIT` (4)
 
-**Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (9) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
+**Breakdown (frontend):** `AppComponent` (8) · `AssetTokenizationComponent` (8) · `InvestorKycComponent` (8) · `AuditLogComponent` (11) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 

@@ -75,4 +75,39 @@ export class AuditLogComponent implements OnInit {
         return 'bg-gray-400/10 text-gray-400 border-gray-400/30';
     }
   }
+
+  actionLabel(action: string): string {
+    switch (action) {
+      case 'TOKENIZE_ASSET':
+        return 'Tokenize Asset';
+      case 'KYC_VERIFIED':
+        return 'KYC Verified';
+      case 'CHECK_ELIGIBILITY':
+        return 'Check Eligibility';
+      case 'INVESTOR_REGISTERED':
+        return 'Investor Registered';
+      case 'MINT_ATTEMPT':
+        return 'Mint Attempt';
+      case 'RPC_CALL':
+        return 'RPC Call';
+      default:
+        return action
+          .split('_')
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+    }
+  }
+
+  actionBadge(action: string): string {
+    switch (action) {
+      case 'TOKENIZE_ASSET':
+        return 'bg-solana-purple/10 text-solana-purple border-solana-purple/30';
+      case 'KYC_VERIFIED':
+        return 'bg-blue-400/10 text-blue-400 border-blue-400/30';
+      case 'CHECK_ELIGIBILITY':
+        return 'bg-cyan-400/10 text-cyan-400 border-cyan-400/30';
+      default:
+        return 'bg-gray-400/10 text-gray-300 border-gray-400/30';
+    }
+  }
 }

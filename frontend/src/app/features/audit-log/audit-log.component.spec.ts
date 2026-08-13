@@ -167,4 +167,21 @@ describe('AuditLogComponent', () => {
     const unknown = component.statusBadge('UNKNOWN');
     expect(unknown).toContain('text-gray-400');
   });
+
+  it('should map action to a human-readable label', () => {
+    expect(component.actionLabel('TOKENIZE_ASSET')).toBe('Tokenize Asset');
+    expect(component.actionLabel('KYC_VERIFIED')).toBe('KYC Verified');
+    expect(component.actionLabel('CHECK_ELIGIBILITY')).toBe('Check Eligibility');
+    expect(component.actionLabel('INVESTOR_REGISTERED')).toBe('Investor Registered');
+    expect(component.actionLabel('MINT_ATTEMPT')).toBe('Mint Attempt');
+    expect(component.actionLabel('RPC_CALL')).toBe('RPC Call');
+    expect(component.actionLabel('UNKNOWN_ACTION')).toBe('Unknown Action');
+  });
+
+  it('should map action to a distinct badge style', () => {
+    expect(component.actionBadge('TOKENIZE_ASSET')).toContain('text-solana-purple');
+    expect(component.actionBadge('KYC_VERIFIED')).toContain('text-blue-400');
+    expect(component.actionBadge('CHECK_ELIGIBILITY')).toContain('text-cyan-400');
+    expect(component.actionBadge('SOMETHING_ELSE')).toContain('text-gray-300');
+  });
 });

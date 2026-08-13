@@ -80,7 +80,11 @@
       <tbody class="divide-y divide-gray-800">
         <tr *ngFor="let log of filteredLogs" class="bg-solana-darker hover:bg-gray-800 transition-colors">
           <td class="px-6 py-4 text-gray-400 whitespace-nowrap">{{ log.timestamp | date:'short' }}</td>
-          <td class="px-6 py-4 font-medium text-white">{{ log.action }}</td>
+          <td class="px-6 py-4">
+            <span [class]="actionBadge(log.action)" class="px-2 py-1 rounded border text-xs font-semibold whitespace-nowrap">
+              {{ actionLabel(log.action) }}
+            </span>
+          </td>
           <td class="px-6 py-4 font-mono text-xs text-gray-400 max-w-[200px] truncate" [title]="log.walletAddress">
             {{ log.walletAddress }}
           </td>
