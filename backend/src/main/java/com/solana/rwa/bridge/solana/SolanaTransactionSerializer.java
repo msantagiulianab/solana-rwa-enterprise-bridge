@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.Map;
 
 /**
  * Compiles a list of {@link SolanaInstruction}s into a Solana transaction
- * message, signs it with the supplied keypairs, and returns the base58-encoded
+ * message, signs it with the supplied keypairs, and returns the base64-encoded
  * signed transaction suitable for the {@code sendTransaction} JSON-RPC method.
  *
  * <p>Implements the legacy (non-versioned) transaction wire format:
@@ -35,7 +36,7 @@ public class SolanaTransactionSerializer {
      *                       readonly accounts automatically)
      * @param recentBlockhash base58 recent blockhash (decoded to 32 bytes)
      * @param signers        keypairs that must sign the transaction
-     * @return base58-encoded signed transaction bytes
+     * @return base64-encoded signed transaction bytes
      */
     public String serializeAndSign(List<SolanaInstruction> instructions,
                                    String recentBlockhash,
@@ -49,7 +50,7 @@ public class SolanaTransactionSerializer {
         byte[] message = serializeMessage(instructions, compiled, blockhash);
 
         ByteArrayOutputStream transaction = new ByteArrayOutputStream();
-        writeU8(transaction, signers.size());
+        writeCompactU16(transaction, signers.size());
         for (SolanaKeypair signer : signers) {
             byte[] signature = keypairService.sign(message, signer);
             if (signature.length != 64) {
@@ -59,7 +60,7 @@ public class SolanaTransactionSerializer {
         }
         transaction.writeBytes(message);
 
-        return Base58Codec.encode(transaction.toByteArray());
+        return Base64.getEncoder().encodeToString(transaction.toByteArray());
     }
 
     private CompiledAccounts compileAccounts(List<SolanaInstruction> instructions) {
@@ -116,6 +117,7 @@ public class SolanaTransactionSerializer {
         writeU8(out, compiled.readonlyUnsigned());
 
         // Account addresses.
+        writeCompactU16(out, compiled.accounts().size());
         for (AccountMeta meta : compiled.accounts()) {
             out.writeBytes(meta.pubkey());
         }
@@ -124,6 +126,7 @@ public class SolanaTransactionSerializer {
         out.writeBytes(blockhash);
 
         // Instructions.
+        writeCompactU16(out, instructions.size());
         for (SolanaInstruction instruction : instructions) {
             int programIndex = compiled.indexOf(instruction.programId());
             writeU8(out, programIndex);
@@ -154,7 +157,7 @@ public class SolanaTransactionSerializer {
     }
 
     private void writeCompactU16(ByteArrayOutputStream out, int value) {
-        // Instructions use a compact-u16 (shortvec) length prefix.
+        // Solana compact-u16 (shortvec) length prefix.
         if (value < 0x80) {
             out.write(value);
         } else if (value < 0x4000) {

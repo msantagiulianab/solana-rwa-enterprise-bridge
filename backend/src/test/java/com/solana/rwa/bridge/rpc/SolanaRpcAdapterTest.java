@@ -24,6 +24,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -141,7 +142,7 @@ class SolanaRpcAdapterTest {
                 "2.0", "4xSgnSignatureabcdefghijkmnopqrstuvwxyz", null, 1L);
         when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
 
-        String signature = adapter.sendTransaction("base58tx");
+        String signature = adapter.sendTransaction("AQIDBA==");
 
         assertThat(signature).isEqualTo("4xSgnSignatureabcdefghijkmnopqrstuvwxyz");
 
@@ -150,6 +151,17 @@ class SolanaRpcAdapterTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
         assertThat(payload).containsEntry("method", "sendTransaction");
+
+        @SuppressWarnings("unchecked")
+        List<Object> params = (List<Object>) payload.get("params");
+        assertThat(params).hasSize(2);
+        assertThat(params.get(0)).isEqualTo("AQIDBA==");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = (Map<String, Object>) params.get(1);
+        assertThat(config)
+                .containsEntry("encoding", "base64")
+                .containsEntry("skipPreflight", false);
     }
 
     @Test

@@ -97,20 +97,20 @@ public class SolanaRpcAdapter {
     }
 
     /**
-     * Submits a fully-signed base58 transaction to the Devnet node.
+     * Submits a fully-signed base64 transaction to the Devnet node.
      *
-     * @param base58Transaction serialized signed transaction payload
+     * @param base64Tx base64-encoded serialized signed transaction payload
      * @return base58 transaction signature confirmed accepted by the node
      * @throws SolanaRpcException on network failure, HTTP error, or malformed/error response
      */
-    public String sendTransaction(String base58Transaction) {
+    public String sendTransaction(String base64Tx) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("jsonrpc", JSONRPC_VERSION);
         params.put("method", "sendTransaction");
         params.put("id", requestId.getAndIncrement());
         params.put("params", List.of(
-                base58Transaction,
-                Map.of("encoding", "base58", "preflightCommitment", "confirmed")));
+                base64Tx,
+                Map.of("encoding", "base64", "skipPreflight", false)));
 
         RpcEnvelope<String> envelope = call(
                 "sendTransaction", params, new ParameterizedTypeReference<>() {
