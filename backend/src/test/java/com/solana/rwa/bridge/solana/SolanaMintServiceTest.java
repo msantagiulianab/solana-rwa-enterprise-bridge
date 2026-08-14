@@ -91,16 +91,16 @@ class SolanaMintServiceTest {
         int numReadonlyUnsignedAccounts = transaction[offset[0] + 2];
         offset[0] += 3;
 
-        // InitializeMint references the mint (signer + writable), the rent
-        // sysvar (readonly), and the token program id (readonly). After sorting,
-        // exactly one account is a required signer and two are readonly unsigned.
-        assertThat(numRequiredSignatures).isEqualTo(1);
+        // The fee payer and mint are both writable signers, while the rent
+        // sysvar and token program id are readonly unsigned accounts.
+        assertThat(numRequiredSignatures).isEqualTo(2);
         assertThat(numReadonlySignedAccounts).isZero();
         assertThat(numReadonlyUnsignedAccounts).isEqualTo(2);
 
-        // Account list: compact-u16 length prefix + 32-byte keys.
+        // Account list: compact-u16 length prefix + 32-byte keys
+        // (payer, mint, rent sysvar, token program).
         int accountCount = readCompactU16(transaction, offset);
-        assertThat(accountCount).isEqualTo(3);
+        assertThat(accountCount).isEqualTo(4);
         offset[0] += accountCount * 32;
 
         // Recent blockhash (32 bytes).
@@ -114,7 +114,7 @@ class SolanaMintServiceTest {
         // compact-u16 account index list (mint + rent sysvar), compact-u16 data.
         int programIndex = transaction[offset[0]] & 0xFF;
         offset[0] += 1;
-        assertThat(programIndex).isEqualTo(2);
+        assertThat(programIndex).isEqualTo(3);
 
         int accountListLength = readCompactU16(transaction, offset);
         assertThat(accountListLength).isEqualTo(2);

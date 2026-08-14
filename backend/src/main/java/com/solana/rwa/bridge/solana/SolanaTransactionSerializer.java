@@ -5,7 +5,6 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +34,9 @@ public class SolanaTransactionSerializer {
      * @param instructions   instructions to include (program ids are compiled as
      *                       readonly accounts automatically)
      * @param recentBlockhash base58 recent blockhash (decoded to 32 bytes)
-     * @param signers        keypairs that must sign the transaction
+     * @param signers        keypairs that must sign the transaction (the first
+     *                       signer is the fee payer and is always included as a
+     *                       writable signer account in the compiled message)
      * @return base64-encoded signed transaction bytes
      */
     public String serializeAndSign(List<SolanaInstruction> instructions,
@@ -46,7 +47,7 @@ public class SolanaTransactionSerializer {
             throw new IllegalArgumentException("Recent blockhash must decode to 32 bytes");
         }
 
-        CompiledAccounts compiled = compileAccounts(instructions);
+        CompiledAccounts compiled = compileAccounts(instructions, signers);
         byte[] message = serializeMessage(instructions, compiled, blockhash);
 
         ByteArrayOutputStream transaction = new ByteArrayOutputStream();
@@ -63,8 +64,17 @@ public class SolanaTransactionSerializer {
         return Base64.getEncoder().encodeToString(transaction.toByteArray());
     }
 
-    private CompiledAccounts compileAccounts(List<SolanaInstruction> instructions) {
+    private CompiledAccounts compileAccounts(List<SolanaInstruction> instructions,
+                                             List<SolanaKeypair> signers) {
         Map<String, AccountMeta> unique = new LinkedHashMap<>();
+
+        // Every signer must appear in the message account list. The first signer
+        // is the fee payer, which Solana always treats as a writable signer.
+        // Other explicit signers (e.g. the mint keypair) are merged here too and
+        // are promoted to signers/writable when also referenced by an instruction.
+        for (SolanaKeypair signer : signers) {
+            merge(unique, new AccountMeta(signer.getPublicKeyBytes(), true, true));
+        }
 
         for (SolanaInstruction instruction : instructions) {
             for (AccountMeta meta : instruction.accounts()) {
@@ -74,21 +84,41 @@ public class SolanaTransactionSerializer {
             merge(unique, new AccountMeta(instruction.programId(), false, false));
         }
 
-        List<AccountMeta> ordered = new ArrayList<>(unique.values());
-        ordered.sort(Comparator
-                .comparingInt((AccountMeta meta) -> meta.signer() ? 0 : 1)
-                .thenComparingInt(meta -> meta.writable() ? 0 : 1));
+        // Classify the deduplicated accounts into the four Solana message
+        // categories and concatenate them in the canonical wire order:
+        //   1. writable signers, 2. readonly signers,
+        //   3. writable non-signers, 4. readonly non-signers.
+        List<AccountMeta> writableSigners = new ArrayList<>();
+        List<AccountMeta> readonlySigners = new ArrayList<>();
+        List<AccountMeta> writableNonSigners = new ArrayList<>();
+        List<AccountMeta> readonlyNonSigners = new ArrayList<>();
+
+        for (AccountMeta meta : unique.values()) {
+            if (meta.signer() && meta.writable()) {
+                writableSigners.add(meta);
+            } else if (meta.signer()) {
+                readonlySigners.add(meta);
+            } else if (meta.writable()) {
+                writableNonSigners.add(meta);
+            } else {
+                readonlyNonSigners.add(meta);
+            }
+        }
+
+        List<AccountMeta> ordered = new ArrayList<>();
+        ordered.addAll(writableSigners);
+        ordered.addAll(readonlySigners);
+        ordered.addAll(writableNonSigners);
+        ordered.addAll(readonlyNonSigners);
 
         Map<String, Integer> indexByKey = new LinkedHashMap<>();
         for (int i = 0; i < ordered.size(); i++) {
             indexByKey.put(Base58Codec.encode(ordered.get(i).pubkey()), i);
         }
 
-        int requiredSignatures = (int) ordered.stream().filter(AccountMeta::signer).count();
-        int readonlySigned = (int) ordered.stream()
-                .filter(meta -> meta.signer() && !meta.writable()).count();
-        int readonlyUnsigned = (int) ordered.stream()
-                .filter(meta -> !meta.signer() && !meta.writable()).count();
+        int requiredSignatures = writableSigners.size() + readonlySigners.size();
+        int readonlySigned = readonlySigners.size();
+        int readonlyUnsigned = readonlyNonSigners.size();
 
         return new CompiledAccounts(ordered, requiredSignatures, readonlySigned, readonlyUnsigned, indexByKey);
     }
