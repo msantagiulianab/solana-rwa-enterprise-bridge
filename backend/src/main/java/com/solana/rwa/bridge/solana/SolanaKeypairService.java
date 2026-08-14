@@ -1,5 +1,6 @@
 package com.solana.rwa.bridge.solana;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import net.i2p.crypto.eddsa.EdDSAEngine;
 import net.i2p.crypto.eddsa.EdDSAPrivateKey;
 import net.i2p.crypto.eddsa.EdDSAPublicKey;
@@ -13,6 +14,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -21,16 +23,17 @@ import java.util.Arrays;
  * Generates and signs Solana Ed25519 keypairs.
  *
  * <p>The signing key may be supplied through the {@code solana.rpc.private-key}
- * env var (base58) for deterministic enterprise custody, or generated fresh
- * per mint when left blank. Signing is performed in-process with a pure-Java
- * Ed25519 provider, so no live Devnet node or wallet provider is involved at
- * key-generation time.
+ * env var, or generated fresh per mint when left blank. The configured value is
+ * parsed flexibly (see {@link #parseSecretKeyToSeed(String)}). No private key is
+ * ever logged or persisted; only the derived public key is exposed at startup.
  */
 @Slf4j
 @Service
 public class SolanaKeypairService {
 
     private static final int SEED_LENGTH = 32;
+    private static final int PHANTOM_SECRET_KEY_LENGTH = 64;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final EdDSAParameterSpec spec = EdDSANamedCurveTable.getByName("Ed25519");
 
@@ -48,20 +51,75 @@ public class SolanaKeypairService {
     /**
      * Resolves the keypair used for mint creation.
      *
-     * <p>When {@code SOLANA_DEVNET_PRIVATE_KEY} is configured, decodes the base58
-     * secret seed. Otherwise generates a fresh ephemeral keypair. No private key
-     * is logged or persisted.
+     * <p>When {@code SOLANA_DEVNET_PRIVATE_KEY} is configured, it is decoded
+     * into a 32-byte Ed25519 seed. Otherwise a fresh ephemeral keypair is used.
      */
     public SolanaKeypair resolveKeypair() {
         if (configuredPrivateKey != null && !configuredPrivateKey.isBlank()) {
-            byte[] seed = Base58Codec.decode(configuredPrivateKey);
-            if (seed.length != SEED_LENGTH) {
-                throw new IllegalStateException(
-                        "SOLANA_DEVNET_PRIVATE_KEY must be a 32-byte base58-encoded seed");
-            }
-            return fromSeed(seed);
+            return fromSeed(parseSecretKeyToSeed(configuredPrivateKey));
         }
         return fromSeed(ephemeralSeed.clone());
+    }
+
+    /**
+     * Parses a configured private key into a 32-byte Ed25519 seed.
+     *
+     * <p>Accepted formats:
+     * <ul>
+     *   <li>Base58 32-byte seed</li>
+     *   <li>Base58 64-byte Phantom/CLI secret key (first 32 bytes are the seed)</li>
+     *   <li>JSON integer byte array (Solana CLI keypair export)</li>
+     * </ul>
+     *
+     * Leading/trailing whitespace and matching double- or single-quotes are
+     * stripped before parsing to tolerate values copied from shell/JSON files.
+     */
+    byte[] parseSecretKeyToSeed(String rawPrivateKey) {
+        String value = rawPrivateKey.trim();
+        while (value.length() >= 2
+                && ((value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"')
+                || (value.charAt(0) == '\'' && value.charAt(value.length() - 1) == '\''))) {
+            value = value.substring(1, value.length() - 1).trim();
+        }
+
+        byte[] decoded;
+        if (value.startsWith("[") && value.endsWith("]")) {
+            decoded = parseJsonByteArray(value);
+        } else {
+            decoded = Base58Codec.decode(value);
+        }
+        return normalizeSeed(decoded);
+    }
+
+    private byte[] parseJsonByteArray(String json) {
+        try {
+            int[] values = OBJECT_MAPPER.readValue(json, int[].class);
+            byte[] bytes = new byte[values.length];
+            for (int i = 0; i < values.length; i++) {
+                if (values[i] < Byte.MIN_VALUE || values[i] > 255) {
+                    throw new IllegalStateException(
+                            "SOLANA_DEVNET_PRIVATE_KEY JSON array contains an out-of-range byte at index "
+                                    + i + ": " + values[i]);
+                }
+                bytes[i] = (byte) values[i];
+            }
+            return bytes;
+        } catch (IOException ex) {
+            throw new IllegalStateException(
+                    "SOLANA_DEVNET_PRIVATE_KEY must be a valid JSON byte array", ex);
+        }
+    }
+
+    private byte[] normalizeSeed(byte[] decoded) {
+        if (decoded.length == SEED_LENGTH) {
+            return decoded;
+        }
+        if (decoded.length == PHANTOM_SECRET_KEY_LENGTH) {
+            return Arrays.copyOf(decoded, SEED_LENGTH);
+        }
+        throw new IllegalStateException(
+                "SOLANA_DEVNET_PRIVATE_KEY must be a 32-byte or 64-byte key (found "
+                        + decoded.length + " bytes)");
     }
 
     /**

@@ -526,6 +526,35 @@ fund the wallet before attempting on-chain tokenization.
 - Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **92 tests, 0 failures, 0 errors**
   (48 unit + 44 integration).
 
+ **Decisions:**
+ - Keep the error mapping at the `SolanaMintService` boundary; controller/repository layers stay
+   unchanged, and the `GlobalExceptionHandler` already sanitizes unexpected 500s.
+
+---
+
+### Post-Phase 5 (Step 8): Flexible `SOLANA_DEVNET_PRIVATE_KEY` Parsing (GREEN: 98 backend)
+
+**Plan:** Accept the three common Solana secret-key encodings for
+`SOLANA_DEVNET_PRIVATE_KEY` so operators can paste either a raw 32-byte base58 seed, a Phantom
+64-byte base58 export, or a Solana CLI JSON byte-array keypair without manual conversion.
+
+**Implementation:**
+- `SolanaKeypairService.parseSecretKeyToSeed(String)` — trims whitespace and matching double/single
+  quotes, then:
+  - If the value is bracketed (`[...]`), parses it as a JSON integer byte array (validating each
+    byte is 0–255).
+  - Otherwise decodes base58 and normalizes to a 32-byte Ed25519 seed:
+    - 32 bytes → used directly.
+    - 64 bytes → first 32 bytes (standard Phantom/CLI secret-key layout).
+    - Any other length → `IllegalStateException` stating the byte length found.
+
+**Tests:**
+- `SolanaKeypairServiceTest` (6): 32-byte base58 seed, quote/whitespace trimming, 64-byte Phantom
+  base58 truncation, JSON 32-byte array, JSON 64-byte array truncation, and a 31-byte
+  unsupported-length error.
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **98 tests, 0 failures, 0 errors**
+  (54 unit + 44 integration).
+
 **Decisions:**
-- Keep the error mapping at the `SolanaMintService` boundary; controller/repository layers stay
-  unchanged, and the `GlobalExceptionHandler` already sanitizes unexpected 500s.
+- Parsing is isolated in the keypair service and does not alter signing, serialization, or
+  compliance logic; the private key is still never logged or persisted.
