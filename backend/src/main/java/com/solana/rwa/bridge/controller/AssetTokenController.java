@@ -25,13 +25,6 @@ public class AssetTokenController {
 
     public static final String ACTION_TOKENIZE_ASSET = "TOKENIZE_ASSET";
 
-    /**
-     * Tokenization is an off-chain registry operation with no investor wallet in
-     * scope, so the audit trail attributes the event to the Solana system program
-     * address as a fixed treasury/sentinel wallet.
-     */
-    public static final String SYSTEM_TREASURY_WALLET = "11111111111111111111111111111111";
-
     private final TokenService tokenService;
     private final AuditLogRepository auditLogRepository;
 
@@ -49,7 +42,7 @@ public class AssetTokenController {
         AssetToken token = tokenService.create(request);
 
         auditLogRepository.save(AuditLog.builder()
-                .walletAddress(SYSTEM_TREASURY_WALLET)
+                .walletAddress(token.getMintAddress())
                 .action(ACTION_TOKENIZE_ASSET)
                 .status(AuditLogStatus.APPROVED)
                 .reason("Asset tokenized: " + token.getAssetName())

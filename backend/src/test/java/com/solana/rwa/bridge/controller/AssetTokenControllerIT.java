@@ -3,9 +3,11 @@ package com.solana.rwa.bridge.controller;
 import com.solana.rwa.bridge.dto.AssetTokenRegistrationRequest;
 import com.solana.rwa.bridge.entity.AssetToken;
 import com.solana.rwa.bridge.entity.AssetTokenComplianceStatus;
+import com.solana.rwa.bridge.entity.AuditLog;
 import com.solana.rwa.bridge.repository.AuditLogRepository;
 import com.solana.rwa.bridge.service.TokenService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -18,6 +20,7 @@ import com.solana.rwa.bridge.config.ApiKeyAuthInterceptor;
 
 import java.math.BigDecimal;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -69,7 +72,11 @@ class AssetTokenControllerIT {
                 .andExpect(jsonPath("$.mintAddress").value("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))
                 .andExpect(jsonPath("$.complianceStatus").value("NON_COMPLIANT"));
 
-        verify(auditLogRepository).save(any());
+        ArgumentCaptor<AuditLog> logCaptor = ArgumentCaptor.forClass(AuditLog.class);
+        verify(auditLogRepository).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getWalletAddress())
+                .isEqualTo("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        assertThat(logCaptor.getValue().getAction()).isEqualTo(AssetTokenController.ACTION_TOKENIZE_ASSET);
     }
 
     @Test
