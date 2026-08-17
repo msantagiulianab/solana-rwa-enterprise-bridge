@@ -44,7 +44,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | Frontend | Angular 18+ (Standalone Components), Tailwind CSS 3.4, @solana/web3.js | [Vercel](https://solana-rwa-enterprise-bridge.vercel.app) |
 | Backend | Spring Boot 3.5, Java 21, Spring Data JPA, Lombok | [Render](https://solana-rwa-enterprise-bridge.onrender.com/api) |
 | Database | PostgreSQL (Neon Serverless – production; Docker PostgreSQL 16 – local dev) | Neon / Docker |
-| Blockchain | Solana Devnet JSON-RPC (SolanaRpcAdapter with pure Mockito unit tests) | api.devnet.solana.com |
+| Blockchain | Solana Devnet JSON-RPC (pure-Java wire serializer, dynamic rent exemption, `confirmed` commitment + blockhash retry) | api.devnet.solana.com |
 | Wallet | Phantom browser extension (desktop) + Phantom universal deep link (mobile) | phantom.app |
 
 ## Live Links & Access
@@ -83,7 +83,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | `GET` | `/api/tokens` | List all asset tokens |
- | `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) + write audit log + issue on-chain SPL mint |
+| `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) + write audit log + issue on-chain SPL mint |
 | `GET` | `/api/tokens/{id}` | Get token by UUID |
 | `GET` | `/api/investors` | List all registered investors |
 | `POST` | `/api/investors` | Register an investor (`{ fullName, email, walletAddress, country, kycStatus }`) |
@@ -205,8 +205,10 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Spring Boot 3 backend: env-driven config, PostgreSQL via Docker Compose |
 | ✅ Done | JPA domain layer: `Investor`, `AssetToken`, `AuditLog` entities + Spring Data JPA repositories |
 | ✅ Done | Compliance engine: DTOs with Bean Validation, `ComplianceService` gatekeeper with mandatory audit logging, `/api/v1/compliance/*` and `/api/investors` REST controllers, `GlobalExceptionHandler` |
- | ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`, `getLatestBlockhash`, `sendTransaction`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
- | ✅ Done | On-chain token minting: `SolanaMintService` issues a real SPL Token `InitializeMint` on Devnet (Ed25519 keypair generation/signing + base58 transaction serialization), persists the mint address to `AssetToken.mintAddress`, and links it in the frontend |
+| ✅ Done | Solana Devnet RPC layer: `SolanaRpcAdapter` (`getAccountInfo`, `getTokenAccountBalance`, `getLatestBlockhash`, `getMinimumBalanceForRentExemption`, `sendTransaction`) via JSON-RPC, graceful failure mapping to `SolanaRpcException`, on-chain wallet existence gate inside `ComplianceService` (fail-closed) |
+| ✅ Done | On-chain token minting: `SolanaMintService` issues a real SPL Token `InitializeMint` on Devnet via an atomic 2-instruction payload, persisted to `AssetToken.mintAddress` and linked in the frontend |
+| ✅ Done | Canonical Solana wire serializer: 4-category account classification (writable/readonly signers, writable/readonly non-signers) with header bytes derived directly from the compiled account table |
+| ✅ Done | Dynamic rent exemption & confirmed commitment: `getMinimumBalanceForRentExemption(82)` with fallback, `confirmed` blockhash/preflight, and up to 3 fresh-blockhash retries on "Blockhash not found" |
 | ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 21), `render.yaml` Blueprint, CORS for Vercel origins |
 | ✅ Done | Angular frontend UI scaffold: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
 | ✅ Done | Angular frontend feature implementation: Phantom wallet integration, tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter |
@@ -251,11 +253,11 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
- | Backend unit tests (`*Test.java`) | 54 |
- | Backend integration tests (`*IT.java`) | 44 |
- | Frontend specs | 46 |
+| Backend unit tests (`*Test.java`) | 63 |
+| Backend integration tests (`*IT.java`) | 44 |
+| Frontend specs | 46 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (13) · `ComplianceDtosValidationTest` (7) · `SolanaAddressValidatorTest` (5) · `ApiKeyAuthInterceptorTest` (5) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (2) · `TokenServiceTest` (1)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (17) · `ComplianceDtosValidationTest` (7) · `SolanaAddressValidatorTest` (5) · `ApiKeyAuthInterceptorTest` (5) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `SolanaTransactionSerializerTest` (1) · `TokenServiceTest` (1)
 
 **Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `AssetTokenControllerIT` (4)
 

@@ -439,8 +439,8 @@ universal-link hand-off alongside the existing desktop extension flow.
   environment files.
 
 **Tests:**
- - `AppComponent` (8 → 9) adds the mobile deep-link rendering spec.
- - `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **42/42 SUCCESS**.
+- `AppComponent` (8 → 9) adds the mobile deep-link rendering spec.
+- `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **42/42 SUCCESS**.
 
 ---
 
@@ -498,8 +498,8 @@ mint instruction through the existing `SolanaRpcAdapter`, persist the base58 min
   logged or persisted.
 - Unit/integration tests mock only `SolanaRpcAdapter`; keypair/transaction/serialization logic is
   verified through the real implementation offline, keeping the build fast and network-free.
- - On-chain mint happens before the off-chain registry row is saved so a failed RPC call aborts the
-   tokenization rather than recording an asset without a verifiable mint address.
+- On-chain mint happens before the off-chain registry row is saved so a failed RPC call aborts the
+  tokenization rather than recording an asset without a verifiable mint address.
 
 ---
 
@@ -526,9 +526,9 @@ fund the wallet before attempting on-chain tokenization.
 - Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **92 tests, 0 failures, 0 errors**
   (48 unit + 44 integration).
 
- **Decisions:**
- - Keep the error mapping at the `SolanaMintService` boundary; controller/repository layers stay
-   unchanged, and the `GlobalExceptionHandler` already sanitizes unexpected 500s.
+**Decisions:**
+- Keep the error mapping at the `SolanaMintService` boundary; controller/repository layers stay
+  unchanged, and the `GlobalExceptionHandler` already sanitizes unexpected 500s.
 
 ---
 
@@ -558,3 +558,40 @@ fund the wallet before attempting on-chain tokenization.
 **Decisions:**
 - Parsing is isolated in the keypair service and does not alter signing, serialization, or
   compliance logic; the private key is still never logged or persisted.
+
+---
+
+## 2026-08-17
+
+### Post-Phase 5 (Step 9): Canonical Wire Serializer, Blockhash Retry Engine & Live Devnet Mint (GREEN: 107 backend + 46 frontend)
+
+**Plan:** Correct the Solana transaction wire format, make blockhash/commitment handling robust, and verify a real on-chain SPL mint end-to-end on Solana Devnet.
+
+**Solana Transaction Wire Serializer Fix (commit `c1694a0`):**
+- Replaced arbitrary account sorting with the canonical 4-category Solana message order: Writable Signers, Readonly Signers, Writable Non-Signers, Readonly Non-Signers.
+- Derived the message header bytes (`requiredSignatures` / `readonlySigned` / `readonlyUnsigned`) directly from those categories and mapped each instruction's account indexes against the post-sort compiled account table.
+
+**Blockhash Commitment & Retry Engine (commit `3cd903f`):**
+- Enforced `confirmed` commitment for `getLatestBlockhash` and for `sendTransaction`'s `preflightCommitment`.
+- Added up to 3 automatic retries that fetch a fresh blockhash and re-sign/re-submit when the node reports a "Blockhash not found" simulation error.
+
+**Atomic 2-Instruction SPL Token Mint Creation (commit `2611ebf`):**
+- Added dynamic rent exemption querying via `getMinimumBalanceForRentExemption(82)` with a `1_461_600` lamports fallback for the 82-byte SPL Token Mint account.
+- Assembled the atomic payload: Instruction 0 (`SystemProgram.createAccount` with 82 bytes) + Instruction 1 (`TokenProgram.initializeMint` with 6 decimals and the fee payer as mint authority).
+
+**Audit Log Wallet Address Fix:**
+- Updated tokenization audit logging to record the actual on-chain mint address instead of the System Program default (`11111111111111111111111111111111`).
+
+**Live Devnet Verification:**
+- Verified live deployment on Solana Devnet, e.g. Asset "Dubai Commercial SPV 3" at mint `3Zr8ccitNZ5vPBRCpBxsN9rwjJGenDMivbx7857nv1Yi`.
+
+**Tests:**
+- `SolanaTransactionSerializerTest` (1) verifies the strict 4-category account ordering, header bytes, and post-sort instruction account indexes.
+- `SolanaMintServiceTest` (2 → 6) adds the atomic 2-instruction wire-format, rent-exemption fallback, and blockhash retry/exhaustion cases.
+- `SolanaRpcAdapterTest` (13 → 17) adds `getMinimumBalanceForRentExemption` success/fallback cases and the `confirmed` commitment assertions.
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **107 tests, 0 failures, 0 errors** (63 unit + 44 integration).
+- Frontend: `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → **46/46 SUCCESS**.
+
+**Decisions:**
+- Rent exemption is queried dynamically but degrades to a fixed fallback, keeping mint issuance resilient when the node is unreachable.
+- Blockhash retries are scoped to stale-blockhash errors only; other RPC failures still fail closed.
