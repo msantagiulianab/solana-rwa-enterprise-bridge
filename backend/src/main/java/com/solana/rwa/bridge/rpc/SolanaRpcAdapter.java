@@ -8,6 +8,7 @@ import com.solana.rwa.bridge.rpc.dto.LatestBlockhashResult;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalance;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalanceResult;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -30,10 +31,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * malformed envelope, or JSON-RPC error payload NEVER silently yields a green
  * compliance decision.
  */
+@Slf4j
 @Service
 public class SolanaRpcAdapter {
 
     private static final String JSONRPC_VERSION = "2.0";
+
+    /**
+     * Fallback rent-exempt minimum balance (lamports) for an 82-byte SPL Token
+     * mint account, used when the live node cannot be queried.
+     */
+    public static final long DEFAULT_MINT_RENT_EXEMPTION = 1_461_600L;
 
     private final RestClient restClient;
     private final String rpcUrl;
@@ -94,6 +102,43 @@ public class SolanaRpcAdapter {
             throw new SolanaRpcException("Solana RPC call 'getLatestBlockhash' failed: node returned a null result");
         }
         return envelope.result().value();
+    }
+
+    /**
+     * Queries the rent-exempt minimum balance (lamports) for an account of a
+     * given data length.
+     *
+     * <p>Unlike other adapters this call does not fail closed on an RPC error:
+     * the rent schedule is a network-wide constant, so an unreachable node or a
+     * malformed/error response falls back to the default for an 82-byte SPL
+     * Token mint ({@link #DEFAULT_MINT_RENT_EXEMPTION}).
+     *
+     * @param dataLength account space in bytes
+     * @return rent-exempt minimum balance in lamports
+     */
+    public long getMinimumBalanceForRentExemption(long dataLength) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("jsonrpc", JSONRPC_VERSION);
+        params.put("method", "getMinimumBalanceForRentExemption");
+        params.put("id", requestId.getAndIncrement());
+        params.put("params", List.of(dataLength, Map.of("commitment", "confirmed")));
+
+        try {
+            RpcEnvelope<Long> envelope = call(
+                    "getMinimumBalanceForRentExemption",
+                    params,
+                    new ParameterizedTypeReference<>() {
+                    });
+            if (!envelope.hasError() && envelope.result() != null) {
+                return envelope.result();
+            }
+            log.warn("Solana RPC 'getMinimumBalanceForRentExemption' returned no usable value; "
+                    + "falling back to {} lamports", DEFAULT_MINT_RENT_EXEMPTION);
+        } catch (SolanaRpcException ex) {
+            log.warn("Solana RPC 'getMinimumBalanceForRentExemption' unavailable ({}); "
+                    + "falling back to {} lamports", ex.getMessage(), DEFAULT_MINT_RENT_EXEMPTION);
+        }
+        return DEFAULT_MINT_RENT_EXEMPTION;
     }
 
     /**

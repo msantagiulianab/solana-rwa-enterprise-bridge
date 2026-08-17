@@ -139,6 +139,72 @@ class SolanaRpcAdapterTest {
     }
 
     // ------------------------------------------------------------------
+    // getMinimumBalanceForRentExemption
+    // ------------------------------------------------------------------
+
+    @Test
+    void getMinimumBalanceForRentExemption_returnsParsedLamports() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<Long> envelope = new RpcEnvelope<>("2.0", 1_461_600L, null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long lamports = adapter.getMinimumBalanceForRentExemption(82L);
+
+        assertThat(lamports).isEqualTo(1_461_600L);
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(bodySpec).body(bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
+        assertThat(payload).containsEntry("method", "getMinimumBalanceForRentExemption");
+
+        @SuppressWarnings("unchecked")
+        List<Object> params = (List<Object>) payload.get("params");
+        assertThat(params).hasSize(2);
+        assertThat(params.get(0)).isEqualTo(82L);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = (Map<String, Object>) params.get(1);
+        assertThat(config).containsEntry("commitment", "confirmed");
+    }
+
+    @Test
+    void getMinimumBalanceForRentExemption_fallsBackToDefaultOnNetworkTimeout() {
+        stubChain();
+        when(bodySpec.retrieve()).thenThrow(new ResourceAccessException("Read timed out"));
+
+        long lamports = adapter.getMinimumBalanceForRentExemption(82L);
+
+        assertThat(lamports).isEqualTo(SolanaRpcAdapter.DEFAULT_MINT_RENT_EXEMPTION);
+    }
+
+    @Test
+    void getMinimumBalanceForRentExemption_fallsBackToDefaultOnNullResult() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<Long> envelope = new RpcEnvelope<>("2.0", null, null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long lamports = adapter.getMinimumBalanceForRentExemption(82L);
+
+        assertThat(lamports).isEqualTo(SolanaRpcAdapter.DEFAULT_MINT_RENT_EXEMPTION);
+    }
+
+    @Test
+    void getMinimumBalanceForRentExemption_fallsBackToDefaultOnRpcError() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<Long> envelope = new RpcEnvelope<>(
+                "2.0", null, new RpcError(-32601, "Method not found"), 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long lamports = adapter.getMinimumBalanceForRentExemption(82L);
+
+        assertThat(lamports).isEqualTo(SolanaRpcAdapter.DEFAULT_MINT_RENT_EXEMPTION);
+    }
+
+    // ------------------------------------------------------------------
     // sendTransaction
     // ------------------------------------------------------------------
 

@@ -28,6 +28,11 @@ public class SolanaMintService {
     public static final String TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
     /**
+     * System program id, required by the CreateAccount instruction.
+     */
+    public static final String SYSTEM_PROGRAM_ID = "11111111111111111111111111111111";
+
+    /**
      * Rent sysvar account, required by InitializeMint.
      */
     public static final String RENT_SYSVAR_ID = "SysvarRent111111111111111111111111111111111";
@@ -38,6 +43,12 @@ public class SolanaMintService {
     public static final int RWA_TOKEN_DECIMALS = 6;
 
     private static final int INITIALIZE_MINT_DISCRIMINATOR = 0;
+    private static final int CREATE_ACCOUNT_DISCRIMINATOR = 0;
+
+    /**
+     * Space (bytes) required by a standard SPL Token Mint account.
+     */
+    public static final int SPL_MINT_SPACE = 82;
 
     private final SolanaRpcAdapter rpcAdapter;
     private final SolanaKeypairService keypairService;
@@ -64,15 +75,30 @@ public class SolanaMintService {
 
             byte[] mintPubkey = mint.getPublicKeyBytes();
             byte[] payerPubkey = payer.getPublicKeyBytes();
+            byte[] tokenProgram = Base58Codec.decode(TOKEN_PROGRAM_ID);
 
+            long rentExemption = rpcAdapter.getMinimumBalanceForRentExemption(SPL_MINT_SPACE);
+
+            // Instruction 0: SystemProgram.createAccount — allocate+assign the
+            // rent-exempt mint account owned by the SPL Token program.
+            SolanaInstruction createAccount = new SolanaInstruction(
+                    Base58Codec.decode(SYSTEM_PROGRAM_ID),
+                    List.of(
+                            new AccountMeta(payerPubkey, true, true),
+                            new AccountMeta(mintPubkey, true, true)),
+                    buildCreateAccountData(rentExemption, tokenProgram));
+
+            // Instruction 1: TokenProgram.initializeMint — initialize the freshly
+            // created account as an SPL Token mint.
             SolanaInstruction initializeMint = new SolanaInstruction(
-                    Base58Codec.decode(TOKEN_PROGRAM_ID),
+                    tokenProgram,
                     List.of(
                             new AccountMeta(mintPubkey, true, true),
                             new AccountMeta(Base58Codec.decode(RENT_SYSVAR_ID), false, false)),
                     buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
 
-            return submitWithBlockhashRetry(initializeMint, List.of(payer, mint), mint.getPublicKeyBase58());
+            return submitWithBlockhashRetry(
+                    List.of(createAccount, initializeMint), List.of(payer, mint), mint.getPublicKeyBase58());
         } catch (Exception ex) {
             log.error("Failed to create SPL Token mint on Devnet", ex);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -81,13 +107,13 @@ public class SolanaMintService {
     }
 
     /**
-     * Serializes, signs, and submits the InitializeMint transaction, retrying up
+     * Serializes, signs, and submits the mint creation transaction, retrying up
      * to three attempts when the node reports that the recent blockhash has
      * expired ("Blockhash not found"). Each attempt fetches a fresh blockhash
      * immediately before signing so the transaction is never bound to a stale
      * blockhash.
      */
-    private String submitWithBlockhashRetry(SolanaInstruction initializeMint,
+    private String submitWithBlockhashRetry(List<SolanaInstruction> instructions,
                                             List<SolanaKeypair> signers,
                                             String mintAddress) {
         SolanaRpcException lastBlockhashFailure = null;
@@ -95,7 +121,7 @@ public class SolanaMintService {
             try {
                 LatestBlockhash latest = rpcAdapter.getLatestBlockhash();
                 String signedTransaction = transactionSerializer.serializeAndSign(
-                        List.of(initializeMint),
+                        instructions,
                         latest.blockhash(),
                         signers);
 
@@ -118,6 +144,25 @@ public class SolanaMintService {
     private boolean isBlockhashNotFound(SolanaRpcException ex) {
         String message = ex.getMessage();
         return message != null && message.toLowerCase().contains("blockhash not found");
+    }
+
+    private byte[] buildCreateAccountData(long lamports, byte[] ownerProgramId) {
+        ByteArrayOutputStream data = new ByteArrayOutputStream();
+        data.write(CREATE_ACCOUNT_DISCRIMINATOR); // u32 (4 bytes) little-endian
+        data.write(0);
+        data.write(0);
+        data.write(0);
+        writeU64(data, lamports);   // u64 lamports
+        writeU64(data, SPL_MINT_SPACE); // u64 space
+        data.writeBytes(ownerProgramId); // [32]byte owner
+        return data.toByteArray();
+    }
+
+    private void writeU64(ByteArrayOutputStream out, long value) {
+        for (int i = 0; i < 8; i++) {
+            out.write((int) (value & 0xFF));
+            value >>= 8;
+        }
     }
 
     private byte[] buildInitializeMintData(int decimals, byte[] mintAuthority, boolean freezeAuthoritySet) {

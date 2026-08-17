@@ -128,7 +128,19 @@ class SolanaTransactionSerializerTest {
         assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);   // mint  -> 1
 
         int dataLen0 = readCompactU16(transaction, offset);
+        assertThat(dataLen0).isEqualTo(52); // u32 (4) + u64 (8) + u64 (8) + [32] owner
+        byte[] data0 = new byte[dataLen0];
+        System.arraycopy(transaction, offset[0], data0, 0, dataLen0);
         offset[0] += dataLen0;
+
+        // CreateAccount instruction data: discriminator (u32), lamports (u64),
+        // space (u64), owner program ([32]byte).
+        assertThat(readU32(data0, 0)).isZero();
+        assertThat(readU64(data0, 4)).isEqualTo(1_461_600L);
+        assertThat(readU64(data0, 12)).isEqualTo(82L);
+        byte[] owner = new byte[32];
+        System.arraycopy(data0, 20, owner, 0, 32);
+        assertThat(Base58Codec.encode(owner)).isEqualTo(SolanaMintService.TOKEN_PROGRAM_ID);
 
         // Instruction 1: Token InitializeMint. Program index = token program (4),
         // account indices = [mint(1), rent sysvar(3)].
@@ -146,11 +158,33 @@ class SolanaTransactionSerializerTest {
 
     private byte[] buildCreateAccountData() {
         ByteArrayOutputStream data = new ByteArrayOutputStream();
-        data.write(0); // CreateAccount discriminator
-        writeU64(data, 10_000_000L); // lamports
-        writeU64(data, 82L);         // space for SPL mint account
-        data.writeBytes(tokenProgram); // owner program id
+        writeU32(data, 0);              // CreateAccount discriminator (u32)
+        writeU64(data, 1_461_600L);     // lamports (rent-exempt minimum)
+        writeU64(data, 82L);            // space for SPL mint account
+        data.writeBytes(tokenProgram);  // owner program id
         return data.toByteArray();
+    }
+
+    private void writeU32(ByteArrayOutputStream out, int value) {
+        for (int i = 0; i < 4; i++) {
+            out.write(value & 0xFF);
+            value >>= 8;
+        }
+    }
+
+    private static long readU64(byte[] data, int offset) {
+        long value = 0;
+        for (int i = 7; i >= 0; i--) {
+            value = (value << 8) | (data[offset + i] & 0xFF);
+        }
+        return value;
+    }
+
+    private static int readU32(byte[] data, int offset) {
+        return (data[offset] & 0xFF)
+                | ((data[offset + 1] & 0xFF) << 8)
+                | ((data[offset + 2] & 0xFF) << 16)
+                | ((data[offset + 3] & 0xFF) << 24);
     }
 
     private byte[] buildInitializeMintData(byte[] mintAuthority, int decimals) {
