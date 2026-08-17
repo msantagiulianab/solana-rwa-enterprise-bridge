@@ -3,7 +3,7 @@
 Enterprise-grade bridge between off-chain Spring Boot infrastructure (KYC/AML compliance, audit, PostgreSQL) and the Solana blockchain (Devnet RPC). Strict Test-Driven Development, off-chain compliance gatekeeping, and immutable audit logging.
 
 <p align="center">
-  <img src="assets/images/SolanaRWA-17082026.gif" alt="Solana RWA Enterprise Bridge Preview" width="75%" />
+  <img src="assets/images/SolanaRWA-17082026.gif" alt="Solana RWA Enterprise Bridge Preview" width="100%" />
 </p>
 
 ## What It Solves
