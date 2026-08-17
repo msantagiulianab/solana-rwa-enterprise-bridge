@@ -72,20 +72,52 @@ public class SolanaMintService {
                             new AccountMeta(Base58Codec.decode(RENT_SYSVAR_ID), false, false)),
                     buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
 
-            LatestBlockhash latest = rpcAdapter.getLatestBlockhash();
-            String signedTransaction = transactionSerializer.serializeAndSign(
-                    List.of(initializeMint),
-                    latest.blockhash(),
-                    List.of(payer, mint));
-
-            rpcAdapter.sendTransaction(signedTransaction);
-
-            return mint.getPublicKeyBase58();
+            return submitWithBlockhashRetry(initializeMint, List.of(payer, mint), mint.getPublicKeyBase58());
         } catch (Exception ex) {
             log.error("Failed to create SPL Token mint on Devnet", ex);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Solana Devnet Mint Error: " + ex.getMessage(), ex);
         }
+    }
+
+    /**
+     * Serializes, signs, and submits the InitializeMint transaction, retrying up
+     * to three attempts when the node reports that the recent blockhash has
+     * expired ("Blockhash not found"). Each attempt fetches a fresh blockhash
+     * immediately before signing so the transaction is never bound to a stale
+     * blockhash.
+     */
+    private String submitWithBlockhashRetry(SolanaInstruction initializeMint,
+                                            List<SolanaKeypair> signers,
+                                            String mintAddress) {
+        SolanaRpcException lastBlockhashFailure = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                LatestBlockhash latest = rpcAdapter.getLatestBlockhash();
+                String signedTransaction = transactionSerializer.serializeAndSign(
+                        List.of(initializeMint),
+                        latest.blockhash(),
+                        signers);
+
+                rpcAdapter.sendTransaction(signedTransaction);
+                return mintAddress;
+            } catch (SolanaRpcException ex) {
+                if (isBlockhashNotFound(ex)) {
+                    lastBlockhashFailure = ex;
+                    log.warn("Stale blockhash on attempt {}/3 for SPL mint creation; "
+                            + "fetching a fresh blockhash and retrying", attempt);
+                    continue;
+                }
+                throw ex;
+            }
+        }
+        log.error("Exhausted blockhash retries while creating SPL Token mint", lastBlockhashFailure);
+        throw lastBlockhashFailure;
+    }
+
+    private boolean isBlockhashNotFound(SolanaRpcException ex) {
+        String message = ex.getMessage();
+        return message != null && message.toLowerCase().contains("blockhash not found");
     }
 
     private byte[] buildInitializeMintData(int decimals, byte[] mintAuthority, boolean freezeAuthoritySet) {

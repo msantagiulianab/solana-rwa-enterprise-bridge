@@ -110,7 +110,7 @@ public class SolanaRpcAdapter {
         params.put("id", requestId.getAndIncrement());
         params.put("params", List.of(
                 base64Tx,
-                Map.of("encoding", "base64", "skipPreflight", false)));
+                Map.of("encoding", "base64", "preflightCommitment", "confirmed", "skipPreflight", false)));
 
         RpcEnvelope<String> envelope = call(
                 "sendTransaction", params, new ParameterizedTypeReference<>() {

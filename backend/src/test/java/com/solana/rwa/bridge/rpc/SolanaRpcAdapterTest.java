@@ -115,6 +115,14 @@ class SolanaRpcAdapterTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
         assertThat(payload).containsEntry("method", "getLatestBlockhash");
+
+        @SuppressWarnings("unchecked")
+        List<Object> params = (List<Object>) payload.get("params");
+        assertThat(params).hasSize(1);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = (Map<String, Object>) params.get(0);
+        assertThat(config).containsEntry("commitment", "confirmed");
     }
 
     @Test
@@ -161,6 +169,7 @@ class SolanaRpcAdapterTest {
         Map<String, Object> config = (Map<String, Object>) params.get(1);
         assertThat(config)
                 .containsEntry("encoding", "base64")
+                .containsEntry("preflightCommitment", "confirmed")
                 .containsEntry("skipPreflight", false);
     }
 

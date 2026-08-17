@@ -17,6 +17,7 @@ import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -137,6 +138,47 @@ class SolanaMintServiceTest {
                 .hasMessageContaining("Read timed out")
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
                         .isEqualTo(HttpStatus.BAD_REQUEST));
+    }
+
+    @Test
+    void createMint_retriesOnBlockhashNotFoundThenSucceeds() {
+        when(rpcAdapter.getLatestBlockhash())
+                .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
+        when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))
+                .thenThrow(new SolanaRpcException(
+                        "Solana RPC call 'sendTransaction' failed: JSON-RPC error -32002 "
+                                + "(Blockhash not found: maybe the blockhash has expired)"))
+                .thenReturn("4xSignature");
+
+        String mintAddress = mintService.createMint();
+
+        assertThat(mintAddress)
+                .isNotBlank()
+                .matches("^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}$");
+
+        verify(rpcAdapter, times(2)).getLatestBlockhash();
+        verify(rpcAdapter, times(2)).sendTransaction(ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void createMint_exhaustsRetriesAfterThreeBlockhashNotFoundFailures() {
+        when(rpcAdapter.getLatestBlockhash())
+                .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
+        when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))
+                .thenThrow(new SolanaRpcException(
+                        "Solana RPC call 'sendTransaction' failed: JSON-RPC error -32002 "
+                                + "(Blockhash not found: maybe the blockhash has expired)"));
+
+        assertThatThrownBy(() -> mintService.createMint())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Solana Devnet Mint Error: ")
+                .hasMessageContaining("Blockhash not found")
+                .hasMessageContaining("sendTransaction")
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.BAD_REQUEST));
+
+        verify(rpcAdapter, times(3)).getLatestBlockhash();
+        verify(rpcAdapter, times(3)).sendTransaction(ArgumentMatchers.anyString());
     }
 
     /**
