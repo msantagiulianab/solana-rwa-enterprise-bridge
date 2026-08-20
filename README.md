@@ -87,7 +87,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | `GET` | `/api/tokens` | List all asset tokens |
-| `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd }`) + write audit log + issue on-chain SPL mint |
+| `POST` | `/api/tokens` | Create a new asset token (`{ assetName, valuationUsd, issuerWalletAddress }`) — fail-closed compliance gate → audit log → on-chain SPL mint |
 | `GET` | `/api/tokens/{id}` | Get token by UUID |
 | `GET` | `/api/investors` | List all registered investors |
 | `POST` | `/api/investors` | Register an investor (`{ fullName, email, walletAddress, country, kycStatus }`) |
@@ -104,6 +104,38 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | `/tokens` | `AssetTokenizationComponent` | Asset token dashboard — view tokens, tokenize new assets |
 | `/investors` | `InvestorKycComponent` | Investor KYC registration, APPROVE/REJECT management |
 | `/audit-logs` | `AuditLogComponent` | Immutable audit trail viewer with search & status filters |
+
+## Compliance Gate (Fail-Closed KYC/AML)
+
+Every on-chain mint is protected by a **pre-flight verification gate** enforced in
+[`TokenService.java`](backend/src/main/java/com/solana/rwa/bridge/service/TokenService.java)
+before any binary serialization or `SolanaMintService.createMint()` dispatch. The issuer wallet
+is validated against the off-chain registry and the Solana Devnet ledger, and any failure aborts
+the request with `422 Unprocessable Entity` — so downstream Solana execution is never reached.
+
+| Fail-closed rule | Result |
+|------------------|--------|
+| Issuer not registered | `422` — `Tokenization blocked by compliance: Investor not registered` |
+| Issuer KYC `REJECTED` | `422` — `... Investor KYC status is REJECTED` |
+| Issuer KYC `FLAGGED_SANCTION` | `422` — `... Investor is flagged for sanctions screening` |
+| Issuer KYC not `VERIFIED` (e.g. `PENDING`) | `422` — `... Investor KYC verification is not complete ...` |
+| Wallet absent on-chain (`getAccountInfo().exists() == false`) | `422` — `... Wallet does not exist on Solana chain` |
+| Solana RPC unavailable (`SolanaRpcException`) | `422` — `... Solana RPC unavailable - on-chain verification failed` |
+
+The gate is deliberately **fail-closed**: an RPC outage blocks the attempt rather than silently
+approving, and no Solana Devnet bytes are emitted until every check passes. Unit coverage in
+`TokenServiceTest` asserts `verifyNoInteractions(solanaMintService)` (plus `solanaRpcAdapter` and
+`assetTokenRepository`) on every blocked path, proving zero Devnet bytes are emitted on compliance
+failure.
+
+### Immutable audit logging
+
+Every compliance decision is persisted through `AuditLogRepository` as an immutable
+[`AuditLog`](backend/src/main/java/com/solana/rwa/bridge/entity/AuditLog.java) record with an
+`APPROVED`/`BLOCKED` status, action, reason, and a non-updatable `timestamp`. `ComplianceService`
+writes a `CHECK_ELIGIBILITY` record on every evaluation, and a successful `POST /api/tokens`
+writes a `TOKENIZE_ASSET`/`APPROVED` record attributed to the on-chain mint address — while
+blocked issuers are rejected before any record write or mint occurs.
 
 ## Backend (Spring Boot 3.5 / Java 21)
 
@@ -169,6 +201,19 @@ Located in [`frontend/`](frontend/).
 | API | Render backend at `https://solana-rwa-enterprise-bridge.onrender.com/api` |
 | Hosting | Vercel (`https://solana-rwa-enterprise-bridge.vercel.app`) |
 
+### Connected wallet → tokenization payload
+
+The tokenization form binds the active Phantom wallet to the backend contract:
+
+- `CreateAssetTokenRequest` now carries `issuerWalletAddress: string` alongside `assetName` and
+  `valuationUsd` (see [`asset-token.model.ts`](frontend/src/app/shared/models/asset-token.model.ts)).
+- `AssetTokenizationComponent` subscribes to `SolanaWalletService.connectedPublicKey$` and keeps
+  `issuerWalletAddress` synchronized with the live wallet (auto-cleared on disconnect/account
+  change, never persisted).
+- A client-side wallet guard rejects tokenization before any HTTP call when no wallet is
+  connected (`"Please connect your wallet to tokenize an asset."`), and the tokenize modal
+  renders the connected issuer wallet or a "No wallet connected" notice.
+
 ### Run locally
 
 ```bash
@@ -219,6 +264,8 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Vercel production deployment: SPA hosting with `vercel.json` rewrites + build-time `SECURITY_API_KEY` injection |
 | ✅ Done | Security hardening: `X-API-Key` mutating-route gate, sanitized exception handling, actuator/CORS lockdown, typed domain exceptions |
 | ✅ Done | Mobile Phantom universal deep linking: `buildPhantomDeepLink()` redirects mobile users into Phantom's in-app browser |
+| ✅ Done | Fail-closed KYC/AML pre-flight compliance gate in `TokenService.create` — unregistered / non-`VERIFIED` / `FLAGGED_SANCTION` investors, absent on-chain accounts, and RPC outages all throw `422` before any mint serialization (`0991822`) |
+| ✅ Done | End-to-end connected-wallet tokenization: `issuerWalletAddress` added to `CreateAssetTokenRequest`, client-side wallet guard, and live sync with `SolanaWalletService.connectedPublicKey$` (`ea39d66`) |
 
 ## Render Deployment
 
@@ -257,15 +304,15 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 63 |
-| Backend integration tests (`*IT.java`) | 44 |
-| Frontend specs | 46 |
+| Backend unit tests (`*Test.java`) | 72 |
+| Backend integration tests (`*IT.java`) | 46 |
+| Frontend specs | 47 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (17) · `ComplianceDtosValidationTest` (7) · `SolanaAddressValidatorTest` (5) · `ApiKeyAuthInterceptorTest` (5) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `SolanaTransactionSerializerTest` (1) · `TokenServiceTest` (1)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (17) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1)
 
-**Breakdown (integration):** `InvestorRepositoryIT` (8) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6) · `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `AssetTokenControllerIT` (4)
+**Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (6) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6)
 
-**Breakdown (frontend):** `AppComponent` (9) · `AuditLogComponent` (11) · `AssetTokenizationComponent` (12) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
+**Breakdown (frontend):** `AssetTokenizationComponent` (13) · `AuditLogComponent` (11) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 

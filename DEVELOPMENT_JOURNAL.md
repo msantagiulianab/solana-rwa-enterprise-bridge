@@ -595,3 +595,65 @@ fund the wallet before attempting on-chain tokenization.
 **Decisions:**
 - Rent exemption is queried dynamically but degrades to a fixed fallback, keeping mint issuance resilient when the node is unreachable.
 - Blockhash retries are scoped to stale-blockhash errors only; other RPC failures still fail closed.
+
+---
+
+## 2026-08-20
+
+### Fail-Closed KYC/AML Pre-Flight Gate & End-to-End Connected-Wallet Tokenization (GREEN: 118 backend + 47 frontend)
+
+**Problem statement:** `POST /api/tokens` issued an on-chain SPL mint before validating the
+issuer's identity, so the compliance gate at `/api/v1/compliance/check` could be bypassed by
+calling the tokenization route directly with an arbitrary wallet. The frontend tokenization
+payload likewise had no concept of the connected issuer, so the mint was driven entirely by the
+backend fee payer rather than the user's own Phantom wallet.
+
+**Technical solution (backend, commit `0991822`):**
+- Added `issuerWalletAddress` to `AssetTokenRegistrationRequest` with `@NotBlank` +
+  `@ValidSolanaAddress` Bean Validation.
+- `TokenService.create` now enforces a **pre-flight verification gate** before any binary
+  serialization or `SolanaMintService.createMint()` dispatch. The issuer must be registered, KYC
+  `VERIFIED`, and present on-chain; otherwise `assertIssuerCompliant` throws a
+  `ResponseStatusException(422 Unprocessable Entity)` and the mint is never invoked (fail-closed).
+- Fail-closed rules: unregistered investor (`Investor not registered`), `REJECTED`, 
+  `FLAGGED_SANCTION`, non-`VERIFIED` (e.g. `PENDING`), absent on-chain account (`does not exist
+  on Solana chain`), and Solana RPC outage (`Solana RPC unavailable - on-chain verification
+  failed`) all abort with `422`.
+- The gate's audit trail mirrors `ComplianceService`: immutable `APPROVED`/`BLOCKED` records with
+  timestamps via `AuditLogRepository`; a successful mint is logged `TOKENIZE_ASSET`/`APPROVED`
+  against the mint address, while blocked issuers are rejected before any audit write or mint.
+
+**Technical solution (frontend, commit `ea39d66`):**
+- `CreateAssetTokenRequest` now carries `issuerWalletAddress`.
+- The tokenize modal renders the active issuer wallet (or a "No wallet connected" notice).
+- `AssetTokenizationComponent` subscribes to `SolanaWalletService.connectedPublicKey$` to keep
+  `issuerWalletAddress` synchronized with the live Phantom wallet (auto-cleared on
+  disconnect/account change, never persisted).
+- A client-side guard blocks tokenization with `"Please connect your wallet to tokenize an
+  asset."` before any HTTP call when no wallet is connected.
+
+**Tests:**
+- `TokenServiceTest` (1 → 7): each blocked path asserts `ResponseStatusException` with `422` and
+  `verifyNoInteractions(solanaMintService)` — plus `verifyNoInteractions(solanaRpcAdapter)` /
+  `assetTokenRepository` where applicable — proving zero Devnet bytes are emitted on compliance
+  failure.
+- `ComplianceDtosValidationTest` (7 → 10): added `AssetTokenRegistrationRequest` accept / blank
+  `issuerWalletAddress` / invalid-format cases.
+- `AssetTokenControllerIT` (4 → 6): valid payload 200, blank and invalid `issuerWalletAddress`
+  400 cases.
+- Frontend `AssetTokenizationComponent` specs expanded to 13 (wallet-required guard, payload
+  carries `issuerWalletAddress`), bringing the frontend suite to 47.
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **118 tests, 0 failures, 0 errors**
+  (72 unit + 46 integration) on Java 21 / Spring Boot 3.5.16.
+- Frontend: `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` →
+  **47/47 SUCCESS**.
+- On-chain Devnet verification: a compliant, verified issuer successfully mints an SPL token
+  through the gate (real Devnet mint address persisted to `AssetToken.mintAddress`), and a
+  non-compliant issuer returns `422` with no mint dispatched.
+
+**Decisions:**
+- The gate reuses the exact decision matrix from `ComplianceService` but is enforced at the
+  tokenization boundary so the RPC/settlement layer cannot be reached without a cleared issuer,
+  making the fail-closed guarantee structural rather than optional.
