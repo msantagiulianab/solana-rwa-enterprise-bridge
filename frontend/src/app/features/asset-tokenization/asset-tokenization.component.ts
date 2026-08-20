@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BackendApiService } from '../../shared/services/backend-api.service';
+import { SolanaWalletService } from '../../shared/services/solana-wallet.service';
 import { AssetToken, CreateAssetTokenRequest } from '../../shared/models/asset-token.model';
 
 const BASE58_PATTERN = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}$/;
@@ -22,14 +23,21 @@ export class AssetTokenizationComponent implements OnInit {
   showTokenizeModal = false;
   assetName = '';
   valuationUsd: number | null = null;
+  issuerWalletAddress: string | null = null;
   submitting = false;
   submitError: string | null = null;
   submitSuccess: string | null = null;
 
-  constructor(private readonly api: BackendApiService) {}
+  constructor(
+    private readonly api: BackendApiService,
+    private readonly walletService: SolanaWalletService
+  ) {}
 
   ngOnInit(): void {
     this.loadTokens();
+    this.walletService.connectedPublicKey$.subscribe((key) => {
+      this.issuerWalletAddress = key;
+    });
   }
 
   /**
@@ -86,6 +94,11 @@ export class AssetTokenizationComponent implements OnInit {
   }
 
   createAssetToken(): void {
+    if (!this.issuerWalletAddress) {
+      this.submitError = 'Please connect your wallet to tokenize an asset.';
+      return;
+    }
+
     if (!this.assetName.trim() || this.valuationUsd === null || this.valuationUsd <= 0) {
       this.submitError = 'All fields are required and valuation must be greater than 0.';
       return;
@@ -98,6 +111,7 @@ export class AssetTokenizationComponent implements OnInit {
     const payload: CreateAssetTokenRequest = {
       assetName: this.assetName.trim(),
       valuationUsd: this.valuationUsd,
+      issuerWalletAddress: this.issuerWalletAddress,
     };
 
     this.api.createAssetToken(payload).subscribe({

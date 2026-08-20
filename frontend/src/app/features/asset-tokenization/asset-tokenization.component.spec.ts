@@ -5,6 +5,8 @@ import { AssetTokenizationComponent } from './asset-tokenization.component';
 import { environment } from '../../../environments/environment';
 import { AssetToken } from '../../shared/models/asset-token.model';
 
+const ISSUER_WALLET = '7XeXLabcDEFghijkmnpqrstuvwxyz23456789';
+
 describe('AssetTokenizationComponent', () => {
   let component: AssetTokenizationComponent;
   let fixture: ComponentFixture<AssetTokenizationComponent>;
@@ -163,6 +165,7 @@ describe('AssetTokenizationComponent', () => {
 
     component.assetName = 'Test Token';
     component.valuationUsd = 1000;
+    component.issuerWalletAddress = ISSUER_WALLET;
 
     const newToken: AssetToken = {
       id: 'token-uuid-3',
@@ -180,6 +183,7 @@ describe('AssetTokenizationComponent', () => {
     expect(postReq.request.method).toBe('POST');
     expect(postReq.request.body.assetName).toBe('Test Token');
     expect(postReq.request.body.valuationUsd).toBe(1000);
+    expect(postReq.request.body.issuerWalletAddress).toBe(ISSUER_WALLET);
     postReq.flush(newToken);
 
     fixture.detectChanges();
@@ -187,6 +191,21 @@ describe('AssetTokenizationComponent', () => {
     expect(component.tokens.length).toBe(1);
     expect(component.tokens[0].assetName).toBe('Test Token');
     expect(component.submitSuccess).toContain('Test Token');
+  });
+
+  it('should block tokenization when no wallet is connected', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiBaseUrl}/tokens`).flush([]);
+    fixture.detectChanges();
+
+    component.assetName = 'Test Token';
+    component.valuationUsd = 1000;
+    component.issuerWalletAddress = null;
+    component.createAssetToken();
+
+    expect(component.submitError).toBe('Please connect your wallet to tokenize an asset.');
+    expect(component.submitting).toBeFalse();
+    httpMock.expectNone(`${environment.apiBaseUrl}/tokens`);
   });
 
   it('should require all fields for tokenization', () => {
