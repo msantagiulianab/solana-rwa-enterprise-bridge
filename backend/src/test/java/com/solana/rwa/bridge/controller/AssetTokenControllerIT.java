@@ -37,6 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AssetTokenControllerIT {
 
     private static final String API_KEY = "test-api-key";
+    private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
 
     @Autowired
     private MockMvc mockMvc;
@@ -64,9 +65,10 @@ class AssetTokenControllerIT {
                         .content("""
                                 {
                                   "assetName": "Prime Manhattan Office Fund",
-                                  "valuationUsd": 125000000.00
+                                  "valuationUsd": 125000000.00,
+                                  "issuerWalletAddress": "%s"
                                 }
-                                """))
+                                """.formatted(WALLET)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assetName").value("Prime Manhattan Office Fund"))
                 .andExpect(jsonPath("$.mintAddress").value("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))
@@ -87,7 +89,38 @@ class AssetTokenControllerIT {
                         .content("""
                                 {
                                   "assetName": "",
-                                  "valuationUsd": 100.00
+                                  "valuationUsd": 100.00,
+                                  "issuerWalletAddress": "%s"
+                                }
+                                """.formatted(WALLET)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createToken_returns400WhenIssuerWalletAddressBlank() throws Exception {
+        mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assetName": "Prime Manhattan Office Fund",
+                                  "valuationUsd": 125000000.00,
+                                  "issuerWalletAddress": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createToken_returns400WhenIssuerWalletAddressInvalid() throws Exception {
+        mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assetName": "Prime Manhattan Office Fund",
+                                  "valuationUsd": 125000000.00,
+                                  "issuerWalletAddress": "NOT_A_SOLANA_ADDRESS_0"
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
@@ -100,9 +133,10 @@ class AssetTokenControllerIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "assetName": "Prime Manhattan Office Fund"
+                                  "assetName": "Prime Manhattan Office Fund",
+                                  "issuerWalletAddress": "%s"
                                 }
-                                """))
+                                """.formatted(WALLET)))
                 .andExpect(status().isBadRequest());
     }
 
@@ -114,9 +148,10 @@ class AssetTokenControllerIT {
                         .content("""
                                 {
                                   "assetName": "Prime Manhattan Office Fund",
-                                  "valuationUsd": 0
+                                  "valuationUsd": 0,
+                                  "issuerWalletAddress": "%s"
                                 }
-                                """))
+                                """.formatted(WALLET)))
                 .andExpect(status().isBadRequest());
     }
 }

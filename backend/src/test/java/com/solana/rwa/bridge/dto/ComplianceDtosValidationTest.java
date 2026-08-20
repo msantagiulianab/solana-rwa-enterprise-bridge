@@ -6,6 +6,7 @@ import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,5 +125,50 @@ class ComplianceDtosValidationTest {
         assertThat(violations).isNotEmpty();
         assertThat(violations)
                 .anyMatch(v -> v.getPropertyPath().toString().equals("solanaAddress"));
+    }
+
+    // ---------------------------------------------------------------
+    // AssetTokenRegistrationRequest
+    // ---------------------------------------------------------------
+
+    @Test
+    void assetTokenRegistrationRequest_acceptsValidRequest() {
+        AssetTokenRegistrationRequest request = AssetTokenRegistrationRequest.builder()
+                .assetName("Prime Manhattan Office Fund")
+                .valuationUsd(new BigDecimal("125000000.00"))
+                .issuerWalletAddress(VALID_WALLET)
+                .build();
+
+        assertThat(validator.validate(request)).isEmpty();
+    }
+
+    @Test
+    void assetTokenRegistrationRequest_rejectsBlankIssuerWalletAddress() {
+        AssetTokenRegistrationRequest request = AssetTokenRegistrationRequest.builder()
+                .assetName("Prime Manhattan Office Fund")
+                .valuationUsd(new BigDecimal("125000000.00"))
+                .issuerWalletAddress("")
+                .build();
+
+        Set<ConstraintViolation<AssetTokenRegistrationRequest>> violations = validator.validate(request);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations)
+                .anyMatch(v -> v.getPropertyPath().toString().equals("issuerWalletAddress"));
+    }
+
+    @Test
+    void assetTokenRegistrationRequest_rejectsInvalidIssuerWalletAddressFormat() {
+        AssetTokenRegistrationRequest request = AssetTokenRegistrationRequest.builder()
+                .assetName("Prime Manhattan Office Fund")
+                .valuationUsd(new BigDecimal("125000000.00"))
+                .issuerWalletAddress("NOT_A_SOLANA_ADDRESS_0")
+                .build();
+
+        Set<ConstraintViolation<AssetTokenRegistrationRequest>> violations = validator.validate(request);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations)
+                .anyMatch(v -> v.getPropertyPath().toString().equals("issuerWalletAddress"));
     }
 }
