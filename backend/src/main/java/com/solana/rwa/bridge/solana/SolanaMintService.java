@@ -50,6 +50,11 @@ public class SolanaMintService {
      */
     public static final int SPL_MINT_SPACE = 82;
 
+    /**
+     * Explicit compute-unit cap for the mint transaction.
+     */
+    public static final int DEFAULT_COMPUTE_UNIT_LIMIT = 10_000;
+
     private final SolanaRpcAdapter rpcAdapter;
     private final SolanaKeypairService keypairService;
     private final SolanaTransactionSerializer transactionSerializer;
@@ -79,7 +84,24 @@ public class SolanaMintService {
 
             long rentExemption = rpcAdapter.getMinimumBalanceForRentExemption(SPL_MINT_SPACE);
 
-            // Instruction 0: SystemProgram.createAccount — allocate+assign the
+            // Price the transaction dynamically from the node's recent fee samples.
+            // Both the fee payer and the freshly-generated mint account are passed
+            // as writable-lock filters; the adapter falls back to the configured
+            // baseline when the fee oracle is unavailable.
+            long priorityFee = rpcAdapter.getRecentPrioritizationFees(
+                    List.of(payer.getPublicKeyBase58(), mint.getPublicKeyBase58()));
+
+            // Instruction 0: ComputeBudget.setComputeUnitPrice — set the dynamic
+            // priority fee (micro-lamports per compute unit).
+            SolanaInstruction setComputeUnitPrice =
+                    ComputeBudgetInstruction.setComputeUnitPrice(priorityFee);
+
+            // Instruction 1: ComputeBudget.setComputeUnitLimit — cap compute units
+            // so the transaction never consumes more than the mint workflow needs.
+            SolanaInstruction setComputeUnitLimit =
+                    ComputeBudgetInstruction.setComputeUnitLimit(DEFAULT_COMPUTE_UNIT_LIMIT);
+
+            // Instruction 2: SystemProgram.createAccount — allocate+assign the
             // rent-exempt mint account owned by the SPL Token program.
             SolanaInstruction createAccount = new SolanaInstruction(
                     Base58Codec.decode(SYSTEM_PROGRAM_ID),
@@ -88,7 +110,7 @@ public class SolanaMintService {
                             new AccountMeta(mintPubkey, true, true)),
                     buildCreateAccountData(rentExemption, tokenProgram));
 
-            // Instruction 1: TokenProgram.initializeMint — initialize the freshly
+            // Instruction 3: TokenProgram.initializeMint — initialize the freshly
             // created account as an SPL Token mint.
             SolanaInstruction initializeMint = new SolanaInstruction(
                     tokenProgram,
@@ -98,7 +120,8 @@ public class SolanaMintService {
                     buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
 
             return submitWithBlockhashRetry(
-                    List.of(createAccount, initializeMint), List.of(payer, mint), mint.getPublicKeyBase58());
+                    List.of(setComputeUnitPrice, setComputeUnitLimit, createAccount, initializeMint),
+                    List.of(payer, mint), mint.getPublicKeyBase58());
         } catch (Exception ex) {
             log.error("Failed to create SPL Token mint on Devnet", ex);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
