@@ -40,6 +40,7 @@ solana:
   rpc:
     url: ${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}
     private-key: ${SOLANA_DEVNET_PRIVATE_KEY:}
+    priority-fee-baseline-micro-lamports: ${SOLANA_PRIORITY_FEE_BASELINE:1000}
 
 # ------------------------------------------------------------------
 # Security – API key gate for mutating routes (POST/PATCH/PUT/DELETE).

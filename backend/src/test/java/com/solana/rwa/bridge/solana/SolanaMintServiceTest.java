@@ -31,6 +31,8 @@ class SolanaMintServiceTest {
 
     private static final String MINT_BLOCKHASH = "11111111111111111111111111111111";
     private static final long MINT_RENT_EXEMPTION = 1_461_600L;
+    private static final long PRIORITY_FEE = 5_000L;
+    private static final int COMPUTE_UNIT_LIMIT = 10_000;
 
     @Mock
     private SolanaRpcAdapter rpcAdapter;
@@ -49,6 +51,8 @@ class SolanaMintServiceTest {
     @Test
     void createMint_returnsBase58MintAddressAndSubmitsSignedTransaction() {
         when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
+                .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
                 .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
         when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))
@@ -61,13 +65,16 @@ class SolanaMintServiceTest {
                 .matches("^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}$");
 
         verify(rpcAdapter).getMinimumBalanceForRentExemption(82L);
+        verify(rpcAdapter).getRecentPrioritizationFees(ArgumentMatchers.anyList());
         verify(rpcAdapter).getLatestBlockhash();
         verify(rpcAdapter).sendTransaction(ArgumentMatchers.anyString());
     }
 
     @Test
-    void createMint_submitsAtomicCreateAccountAndInitializeMintWireFormat() {
+    void createMint_submitsAtomicFourInstructionWireFormat() {
         when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
+                .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
                 .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
         when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))
@@ -96,16 +103,16 @@ class SolanaMintServiceTest {
         int numReadonlyUnsignedAccounts = transaction[offset[0] + 2] & 0xFF;
         offset[0] += 3;
 
-        // The fee payer and mint are both writable signers, while the system
-        // program, rent sysvar, and token program are readonly unsigned accounts.
+        // The fee payer and mint are both writable signers, while the compute
+        // budget, system, rent sysvar, and token programs are readonly non-signers.
         assertThat(numRequiredSignatures).isEqualTo(2);
         assertThat(numReadonlySignedAccounts).isZero();
-        assertThat(numReadonlyUnsignedAccounts).isEqualTo(3);
+        assertThat(numReadonlyUnsignedAccounts).isEqualTo(4);
 
         // Account list: compact-u16 length prefix + 32-byte keys
-        // (payer, mint, system program, rent sysvar, token program).
+        // (payer, mint, compute budget, system program, rent sysvar, token program).
         int accountCount = readCompactU16(transaction, offset);
-        assertThat(accountCount).isEqualTo(5);
+        assertThat(accountCount).isEqualTo(6);
 
         byte[][] accountKeys = new byte[accountCount][];
         for (int i = 0; i < accountCount; i++) {
@@ -114,10 +121,12 @@ class SolanaMintServiceTest {
             offset[0] += 32;
         }
         assertThat(Base58Codec.encode(accountKeys[2]))
-                .isEqualTo(SolanaMintService.SYSTEM_PROGRAM_ID);
+                .isEqualTo(ComputeBudgetInstruction.COMPUTE_BUDGET_PROGRAM_ID);
         assertThat(Base58Codec.encode(accountKeys[3]))
-                .isEqualTo(SolanaMintService.RENT_SYSVAR_ID);
+                .isEqualTo(SolanaMintService.SYSTEM_PROGRAM_ID);
         assertThat(Base58Codec.encode(accountKeys[4]))
+                .isEqualTo(SolanaMintService.RENT_SYSVAR_ID);
+        assertThat(Base58Codec.encode(accountKeys[5]))
                 .isEqualTo(SolanaMintService.TOKEN_PROGRAM_ID);
 
         // Recent blockhash (32 bytes).
@@ -125,52 +134,78 @@ class SolanaMintServiceTest {
 
         // Instruction list: compact-u16 length prefix.
         int instructionCount = readCompactU16(transaction, offset);
-        assertThat(instructionCount).isEqualTo(2);
+        assertThat(instructionCount).isEqualTo(4);
 
-        // Instruction 0: SystemProgram.createAccount.
+        // Instruction 0: ComputeBudgetInstruction.setComputeUnitPrice.
         int programIndex0 = transaction[offset[0]++] & 0xFF;
-        assertThat(programIndex0).isEqualTo(2); // system program
-
-        int accountsLen0 = readCompactU16(transaction, offset);
-        assertThat(accountsLen0).isEqualTo(2);
-        assertThat(transaction[offset[0]++] & 0xFF).isZero();      // payer -> 0
-        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);  // mint  -> 1
+        assertThat(programIndex0).isEqualTo(2); // compute budget program (readonly non-signer)
+        assertThat(readCompactU16(transaction, offset)).isZero(); // no referenced accounts
 
         int dataLen0 = readCompactU16(transaction, offset);
-        assertThat(dataLen0).isEqualTo(52); // u32 (4) + u64 (8) + u64 (8) + [32] owner
+        assertThat(dataLen0).isEqualTo(9); // 0x03 discriminator + u64 little-endian fee
         byte[] data0 = new byte[dataLen0];
         System.arraycopy(transaction, offset[0], data0, 0, dataLen0);
         offset[0] += dataLen0;
+        assertThat(data0[0] & 0xFF).isEqualTo(0x03);
+        assertThat(readU64(data0, 1)).isEqualTo(PRIORITY_FEE);
 
-        // u32 discriminator = 0 (little-endian).
-        assertThat(readU32(data0, 0)).isZero();
-        // u64 lamports = rent-exempt minimum (little-endian).
-        assertThat(readU64(data0, 4)).isEqualTo(MINT_RENT_EXEMPTION);
-        // u64 space = 82 bytes (little-endian).
-        assertThat(readU64(data0, 12)).isEqualTo(82L);
-        // Owner program id = SPL Token program.
-        byte[] owner = new byte[32];
-        System.arraycopy(data0, 20, owner, 0, 32);
-        assertThat(Base58Codec.encode(owner)).isEqualTo(SolanaMintService.TOKEN_PROGRAM_ID);
-
-        // Instruction 1: TokenProgram.initializeMint.
+        // Instruction 1: ComputeBudgetInstruction.setComputeUnitLimit.
         int programIndex1 = transaction[offset[0]++] & 0xFF;
-        assertThat(programIndex1).isEqualTo(4); // token program
-
-        int accountsLen1 = readCompactU16(transaction, offset);
-        assertThat(accountsLen1).isEqualTo(2);
-        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);      // mint       -> 1
-        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(3);      // rent sysvar -> 3
+        assertThat(programIndex1).isEqualTo(2); // compute budget program (readonly non-signer)
+        assertThat(readCompactU16(transaction, offset)).isZero();
 
         int dataLen1 = readCompactU16(transaction, offset);
-        assertThat(dataLen1).isEqualTo(35); // discriminator (1) + decimals (1) + authority (32) + COption (1)
+        assertThat(dataLen1).isEqualTo(5); // 0x02 discriminator + u32 little-endian limit
         byte[] data1 = new byte[dataLen1];
         System.arraycopy(transaction, offset[0], data1, 0, dataLen1);
         offset[0] += dataLen1;
+        assertThat(data1[0] & 0xFF).isEqualTo(0x02);
+        assertThat(readU32(data1, 1)).isEqualTo(COMPUTE_UNIT_LIMIT);
 
-        assertThat(data1[0] & 0xFF).isZero();          // InitializeMint discriminator
-        assertThat(data1[1] & 0xFF).isEqualTo(6);      // decimals
-        assertThat(data1[data1.length - 1] & 0xFF).isZero(); // freeze authority COption::None
+        // Instruction 2: SystemProgram.createAccount.
+        int programIndex2 = transaction[offset[0]++] & 0xFF;
+        assertThat(programIndex2).isEqualTo(3); // system program
+
+        int accountsLen2 = readCompactU16(transaction, offset);
+        assertThat(accountsLen2).isEqualTo(2);
+        assertThat(transaction[offset[0]++] & 0xFF).isZero();      // payer -> 0
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);  // mint  -> 1
+
+        int dataLen2 = readCompactU16(transaction, offset);
+        assertThat(dataLen2).isEqualTo(52); // u32 (4) + u64 (8) + u64 (8) + [32] owner
+        byte[] data2 = new byte[dataLen2];
+        System.arraycopy(transaction, offset[0], data2, 0, dataLen2);
+        offset[0] += dataLen2;
+
+        // u32 discriminator = 0 (little-endian).
+        assertThat(readU32(data2, 0)).isZero();
+        // u64 lamports = rent-exempt minimum (little-endian).
+        assertThat(readU64(data2, 4)).isEqualTo(MINT_RENT_EXEMPTION);
+        // u64 space = 82 bytes (little-endian).
+        assertThat(readU64(data2, 12)).isEqualTo(82L);
+        // Owner program id = SPL Token program.
+        byte[] owner = new byte[32];
+        System.arraycopy(data2, 20, owner, 0, 32);
+        assertThat(Base58Codec.encode(owner)).isEqualTo(SolanaMintService.TOKEN_PROGRAM_ID);
+
+        // Instruction 3: TokenProgram.initializeMint.
+        int programIndex3 = transaction[offset[0]++] & 0xFF;
+        assertThat(programIndex3).isEqualTo(5); // token program
+
+        int accountsLen3 = readCompactU16(transaction, offset);
+        assertThat(accountsLen3).isEqualTo(2);
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);      // mint       -> 1
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(4);      // rent sysvar -> 4
+
+        int dataLen3 = readCompactU16(transaction, offset);
+        assertThat(dataLen3).isEqualTo(35); // discriminator (1) + decimals (1) + authority (32) + COption (1)
+        byte[] data3 = new byte[dataLen3];
+        System.arraycopy(transaction, offset[0], data3, 0, dataLen3);
+        offset[0] += dataLen3;
+
+        assertThat(data3[0] & 0xFF).isZero();          // InitializeMint discriminator
+        assertThat(data3[1] & 0xFF).isEqualTo(6);      // decimals
+        assertThat(data3[data3.length - 1] & 0xFF).isZero(); // freeze authority COption::None
     }
 
     @Test
@@ -179,6 +214,8 @@ class SolanaMintServiceTest {
         // returns its built-in fallback for an 82-byte mint account.
         when(rpcAdapter.getMinimumBalanceForRentExemption(82L))
                 .thenReturn(SolanaRpcAdapter.DEFAULT_MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
+                .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
                 .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
         when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))
@@ -190,14 +227,16 @@ class SolanaMintServiceTest {
         verify(rpcAdapter).sendTransaction(txCaptor.capture());
 
         byte[] transaction = Base64.getDecoder().decode(txCaptor.getValue());
-        byte[] data0 = readInstructionData(transaction, 0);
-        assertThat(readU64(data0, 4))
+        byte[] createAccountData = readInstructionData(transaction, 2);
+        assertThat(readU64(createAccountData, 4))
                 .isEqualTo(SolanaRpcAdapter.DEFAULT_MINT_RENT_EXEMPTION);
     }
 
     @Test
     void createMint_wrapsRpcFailureAsBadRequest() {
         when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
+                .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
                 .thenThrow(new SolanaRpcException("getLatestBlockhash", new RuntimeException("Read timed out")));
 
@@ -212,6 +251,8 @@ class SolanaMintServiceTest {
     @Test
     void createMint_retriesOnBlockhashNotFoundThenSucceeds() {
         when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
+                .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
                 .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
         when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))
@@ -233,6 +274,8 @@ class SolanaMintServiceTest {
     @Test
     void createMint_exhaustsRetriesAfterThreeBlockhashNotFoundFailures() {
         when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
+                .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
                 .thenReturn(new LatestBlockhash(MINT_BLOCKHASH, 1234L));
         when(rpcAdapter.sendTransaction(ArgumentMatchers.anyString()))

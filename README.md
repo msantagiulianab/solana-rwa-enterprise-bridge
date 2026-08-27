@@ -258,6 +258,7 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | On-chain token minting: `SolanaMintService` issues a real SPL Token `InitializeMint` on Devnet via an atomic 2-instruction payload, persisted to `AssetToken.mintAddress` and linked in the frontend |
 | ✅ Done | Canonical Solana wire serializer: 4-category account classification (writable/readonly signers, writable/readonly non-signers) with header bytes derived directly from the compiled account table |
 | ✅ Done | Dynamic rent exemption & confirmed commitment: `getMinimumBalanceForRentExemption(82)` with fallback, `confirmed` blockhash/preflight, and up to 3 fresh-blockhash retries on "Blockhash not found" |
+| ✅ Done | Dynamic compute budget & priority fee optimization: `setComputeUnitPrice` + `setComputeUnitLimit` Compute Budget instructions prefixed to the SPL mint payload, priced via `getRecentPrioritizationFees` 75th percentile with a configurable baseline fallback |
 | ✅ Done | Render deployment: `Dockerfile` (multi-stage Java 21), `render.yaml` Blueprint, CORS for Vercel origins |
 | ✅ Done | Angular frontend UI scaffold: Asset Tokenization, Investor KYC, Audit Log viewer; Tailwind CSS dark theme; `@solana/web3.js` integrated |
 | ✅ Done | Angular frontend feature implementation: Phantom wallet integration, tokenize asset form/modal, investor APPROVE/REJECT buttons, audit log search/filter |
@@ -304,11 +305,11 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 72 |
+| Backend unit tests (`*Test.java`) | 85 |
 | Backend integration tests (`*IT.java`) | 46 |
 | Frontend specs | 47 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (17) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1)
 
 **Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (6) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6)
 
