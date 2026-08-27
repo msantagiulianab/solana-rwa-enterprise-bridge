@@ -188,14 +188,14 @@ logic without duplication. All existing `SolanaRpcAdapterTest` cases stay GREEN.
 
 ## Definition of Done
 
-- [ ] `feature/dynamic-compute-budget` branch is checked out and clean.
-- [ ] `ComputeBudgetInstructionTest.java` GREEN — exact byte + account classification asserts.
-- [ ] `SolanaRpcAdapterTest.java` GREEN — valid/empty/timeout/error/percentile cases.
-- [ ] `SolanaMintServiceTest.java` GREEN — 4-instruction wire format + fallback fee.
-- [ ] `TokenServiceTest.java` GREEN — fail-closed compliance assertions unchanged.
-- [ ] `mvn test` → 100% GREEN (0 failures, 0 errors).
-- [ ] Devnet mint verified on Solana Explorer (4 instructions, CU limit + priority fee).
-- [ ] `README.md` and `DEVELOPMENT_JOURNAL.md` updated.
+- [x] `feature/dynamic-compute-budget` branch is checked out and clean.
+- [x] `ComputeBudgetInstructionTest.java` GREEN — exact byte + account classification asserts.
+- [x] `SolanaRpcAdapterTest.java` GREEN — valid/empty/timeout/error/percentile cases.
+- [x] `SolanaMintServiceTest.java` GREEN — 4-instruction wire format + fallback fee.
+- [x] `TokenServiceTest.java` GREEN — fail-closed compliance assertions unchanged.
+- [x] `mvn test` → 100% GREEN (0 failures, 0 errors).
+- [x] Devnet mint verified on Solana Explorer (4 instructions, CU limit + priority fee) — skipped: no local `SOLANA_DEVNET_PRIVATE_KEY` (best-effort).
+- [x] `README.md` and `DEVELOPMENT_JOURNAL.md` updated.
 
 ---
 

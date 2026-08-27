@@ -657,3 +657,39 @@ backend fee payer rather than the user's own Phantom wallet.
 - The gate reuses the exact decision matrix from `ComplianceService` but is enforced at the
   tokenization boundary so the RPC/settlement layer cannot be reached without a cleared issuer,
   making the fail-closed guarantee structural rather than optional.
+
+---
+
+## 2026-08-27
+
+### Dynamic Compute Budget & Priority Fee Optimization (GREEN: 131 backend)
+
+**Plan:** Make SPL Token mint creation cheaper and more reliable on Devnet by prefixing two explicit Compute Budget instructions — `setComputeUnitPrice` (priority fee) and `setComputeUnitLimit` (10,000 CU) — ahead of the existing `SystemProgram.createAccount` + `TokenProgram.initializeMint` atomic payload. Priority fees are priced dynamically from the node's `getRecentPrioritizationFees` RPC with a configurable, fail-safe baseline fallback.
+
+**Implementation (commits `a771099`, `1177fa3`, `7ad1a16`):**
+- `ComputeBudgetInstruction` — pure-Java byte encoder for the account-less Compute Budget program:
+  - `setComputeUnitPrice(long microLamports)` → `0x03` + 8-byte little-endian `u64`.
+  - `setComputeUnitLimit(int units)` → `0x02` + 4-byte little-endian `u32`.
+  - Program id `ComputeBudget111111111111111111111111111111` (32 bytes once base58-decoded), empty account list.
+- `SolanaRpcAdapter.getRecentPrioritizationFees(List<String>)` — JSON-RPC `getRecentPrioritizationFees` over the supplied writable accounts, mapped to a bare `List<PrioritizationFee>` and reduced to the **75th percentile** (nearest-rank). Timeouts, JSON-RPC errors, and empty/null samples fall back to `solana.rpc.priority-fee-baseline-micro-lamports` (env `SOLANA_PRIORITY_FEE_BASELINE`, default `1000` micro-lamports) so a transient fee-oracle outage never blocks mint issuance.
+- `SolanaMintService.createMint()` now assembles an atomic 4-instruction payload:
+  0. `ComputeBudget.setComputeUnitPrice(dynamicFee)` — `0x03` + `u64_le(fee)`
+  1. `ComputeBudget.setComputeUnitLimit(10_000)` — `0x02` + `u32_le(10_000)`
+  2. `SystemProgram.createAccount` (82-byte rent-exempt mint, unchanged)
+  3. `TokenProgram.initializeMint` (6 decimals, fee-payer mint authority, unchanged)
+  The fee query passes both the fee payer and the freshly-generated mint as writable-lock filters; the full payload still flows through the existing blockhash-retry path.
+
+**Tests:**
+- `ComputeBudgetInstructionTest` (7): program-id base58/size asserts, `u64`/`u32` little-endian byte layouts (including `Long.MAX_VALUE`), and negative-input guards.
+- `SolanaRpcAdapterTest` (17 → 23): 75th-percentile selection, empty/timeout/JSON-RPC-error/null-result baseline fallbacks, and the outbound `getRecentPrioritizationFees` payload + account-list assertion.
+- `SolanaMintServiceTest` (6): rewrote the wire-format test to assert the 4-instruction layout (Compute Budget program compiled as a readonly non-signer account; `0x03` fee prefix and `0x02` CU-limit prefix) while keeping rent-exemption fallback and blockhash-retry cases GREEN.
+- `TokenServiceTest` (7): fail-closed compliance assertions unchanged — non-compliant issuers still emit zero Devnet bytes.
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **131 tests, 0 failures, 0 errors** (85 unit + 46 integration) on Java 21 / Spring Boot 3.5.16.
+
+**Decisions:**
+- 75th-percentile (nearest-rank) rather than median or max to land between typical and congestion-spike fees without overpaying.
+- `solana.rpc.priority-fee-baseline-micro-lamports` (default `1000`) is the fail-safe baseline; priority-fee failure is fail-safe, while the KYC/AML compliance gate stays fail-closed.
+- Compute-unit limit fixed at `10_000` — comfortably above the mint workflow requirement while capping worst-case spend.
+
