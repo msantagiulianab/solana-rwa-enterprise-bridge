@@ -5,6 +5,7 @@ import com.solana.rwa.bridge.rpc.dto.AccountInfo;
 import com.solana.rwa.bridge.rpc.dto.AccountInfoResult;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhashResult;
+import com.solana.rwa.bridge.rpc.dto.PrioritizationFee;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalance;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalanceResult;
@@ -45,12 +46,15 @@ public class SolanaRpcAdapter {
 
     private final RestClient restClient;
     private final String rpcUrl;
+    private final long baselinePriorityFee;
     private final AtomicLong requestId = new AtomicLong(1);
 
     public SolanaRpcAdapter(RestClient.Builder restClientBuilder,
-                            @Value("${solana.rpc.url}") String rpcUrl) {
+                            @Value("${solana.rpc.url}") String rpcUrl,
+                            @Value("${solana.rpc.priority-fee-baseline-micro-lamports:1000}") long baselinePriorityFee) {
         this.restClient = restClientBuilder.build();
         this.rpcUrl = rpcUrl;
+        this.baselinePriorityFee = baselinePriorityFee;
     }
 
     /**
@@ -197,6 +201,71 @@ public class SolanaRpcAdapter {
                     + "token account " + tokenAccountAddress + " does not exist");
         }
         return envelope.result().value();
+    }
+
+    /**
+     * Queries recent prioritization-fee samples for the supplied writable accounts
+     * and returns the 75th-percentile fee in micro-lamports.
+     *
+     * <p>The Solana {@code getRecentPrioritizationFees} RPC returns a bare array of
+     * {@code {slot, prioritizationFee}} samples, so the envelope result type is
+     * {@code List<PrioritizationFee>}. Unlike the fail-closed adapters, this call is
+     * fail-safe: a timeout, HTTP/JSON-RPC error, or an empty/null sample set falls
+     * back to the configured {@code solana.rpc.priority-fee-baseline-micro-lamports}
+     * baseline so a transient fee-oracle outage never blocks mint creation.
+     *
+     * @param accountKeys base58 addresses whose writable locks filter the fee samples
+     * @return 75th-percentile prioritization fee in micro-lamports, or the baseline on failure
+     */
+    public long getRecentPrioritizationFees(List<String> accountKeys) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("jsonrpc", JSONRPC_VERSION);
+        params.put("method", "getRecentPrioritizationFees");
+        params.put("id", requestId.getAndIncrement());
+        params.put("params", List.of(accountKeys));
+
+        try {
+            RpcEnvelope<List<PrioritizationFee>> envelope = call(
+                    "getRecentPrioritizationFees", params, new ParameterizedTypeReference<>() {
+                    });
+            if (envelope.hasError()) {
+                log.warn("Solana RPC 'getRecentPrioritizationFees' returned JSON-RPC error {}; "
+                        + "falling back to {} micro-lamports", envelope.error().code(), baselinePriorityFee);
+                return baselinePriorityFee;
+            }
+
+            List<Long> fees = envelope.result() == null
+                    ? List.of()
+                    : envelope.result().stream()
+                            .map(PrioritizationFee::prioritizationFee)
+                            .toList();
+            long fee = seventyFifthPercentile(fees, baselinePriorityFee);
+            if (fees.isEmpty()) {
+                log.warn("Solana RPC 'getRecentPrioritizationFees' returned no fee samples; "
+                        + "falling back to {} micro-lamports", baselinePriorityFee);
+            }
+            return fee;
+        } catch (SolanaRpcException ex) {
+            log.warn("Solana RPC 'getRecentPrioritizationFees' unavailable ({}); "
+                    + "falling back to {} micro-lamports", ex.getMessage(), baselinePriorityFee);
+            return baselinePriorityFee;
+        }
+    }
+
+    /**
+     * Computes the 75th percentile of prioritization fees using the nearest-rank
+     * method, returning {@code fallback} when no samples are available.
+     *
+     * <p>Pure static function with no Spring dependencies, kept package-private so
+     * it stays unit-testable in isolation.
+     */
+    static long seventyFifthPercentile(List<Long> fees, long fallback) {
+        if (fees == null || fees.isEmpty()) {
+            return fallback;
+        }
+        List<Long> sorted = fees.stream().sorted().toList();
+        int rank = (int) Math.ceil(0.75 * sorted.size());
+        return sorted.get(rank - 1);
     }
 
     private <T> RpcEnvelope<T> call(String method, Object payload,

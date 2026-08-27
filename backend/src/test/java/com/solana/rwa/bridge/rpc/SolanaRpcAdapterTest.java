@@ -5,6 +5,7 @@ import com.solana.rwa.bridge.rpc.dto.AccountInfo;
 import com.solana.rwa.bridge.rpc.dto.AccountInfoResult;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhashResult;
+import com.solana.rwa.bridge.rpc.dto.PrioritizationFee;
 import com.solana.rwa.bridge.rpc.dto.RpcContext;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.RpcError;
@@ -51,6 +52,7 @@ class SolanaRpcAdapterTest {
     private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
     private static final String TOKEN_ACCOUNT = "2mN7kqwQ1dPt1qFYGm2Y7yGxVcX9n8zL4v5Wm6pQq7rS8tU";
     private static final String SYSTEM_OWNER = "11111111111111111111111111111111";
+    private static final long BASELINE_PRIORITY_FEE = 2_500L;
 
     @Mock
     private RestClient.Builder restClientBuilder;
@@ -72,7 +74,7 @@ class SolanaRpcAdapterTest {
     @BeforeEach
     void setUp() {
         when(restClientBuilder.build()).thenReturn(restClient);
-        adapter = new SolanaRpcAdapter(restClientBuilder, RPC_URL);
+        adapter = new SolanaRpcAdapter(restClientBuilder, RPC_URL, BASELINE_PRIORITY_FEE);
     }
 
     /**
@@ -406,5 +408,102 @@ class SolanaRpcAdapterTest {
         assertThatThrownBy(() -> adapter.getTokenAccountBalance(TOKEN_ACCOUNT))
                 .isInstanceOf(SolanaRpcException.class)
                 .hasMessageContaining("getTokenAccountBalance");
+    }
+
+    // ------------------------------------------------------------------
+    // getRecentPrioritizationFees
+    // ------------------------------------------------------------------
+
+    @Test
+    void getRecentPrioritizationFees_returnsSeventyFifthPercentile() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<List<PrioritizationFee>> envelope = new RpcEnvelope<>(
+                "2.0",
+                List.of(
+                        new PrioritizationFee(348_125L, 1_000L),
+                        new PrioritizationFee(348_126L, 3_000L),
+                        new PrioritizationFee(348_127L, 2_000L),
+                        new PrioritizationFee(348_128L, 4_000L)),
+                null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long fee = adapter.getRecentPrioritizationFees(List.of(WALLET, TOKEN_ACCOUNT));
+
+        assertThat(fee).isEqualTo(3_000L);
+    }
+
+    @Test
+    void getRecentPrioritizationFees_fallsBackToBaselineOnEmptyResponse() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<List<PrioritizationFee>> envelope = new RpcEnvelope<>(
+                "2.0", List.of(), null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long fee = adapter.getRecentPrioritizationFees(List.of(WALLET));
+
+        assertThat(fee).isEqualTo(BASELINE_PRIORITY_FEE);
+    }
+
+    @Test
+    void getRecentPrioritizationFees_fallsBackToBaselineOnNetworkTimeout() {
+        stubChain();
+        when(bodySpec.retrieve()).thenThrow(new ResourceAccessException("Read timed out"));
+
+        long fee = adapter.getRecentPrioritizationFees(List.of(WALLET));
+
+        assertThat(fee).isEqualTo(BASELINE_PRIORITY_FEE);
+    }
+
+    @Test
+    void getRecentPrioritizationFees_fallsBackToBaselineOnRpcErrorPayload() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<List<PrioritizationFee>> envelope = new RpcEnvelope<>(
+                "2.0", null, new RpcError(-32601, "Method not found"), 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long fee = adapter.getRecentPrioritizationFees(List.of(WALLET));
+
+        assertThat(fee).isEqualTo(BASELINE_PRIORITY_FEE);
+    }
+
+    @Test
+    void getRecentPrioritizationFees_fallsBackToBaselineOnNullResult() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<List<PrioritizationFee>> envelope = new RpcEnvelope<>(
+                "2.0", null, null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        long fee = adapter.getRecentPrioritizationFees(List.of(WALLET));
+
+        assertThat(fee).isEqualTo(BASELINE_PRIORITY_FEE);
+    }
+
+    @Test
+    void getRecentPrioritizationFees_sendsMethodAndAccountListInPayload() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<List<PrioritizationFee>> envelope = new RpcEnvelope<>(
+                "2.0", List.of(new PrioritizationFee(348_125L, 500L)), null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        adapter.getRecentPrioritizationFees(List.of(WALLET, TOKEN_ACCOUNT));
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(bodySpec).body(bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
+        assertThat(payload).containsEntry("method", "getRecentPrioritizationFees");
+
+        @SuppressWarnings("unchecked")
+        List<Object> params = (List<Object>) payload.get("params");
+        assertThat(params).hasSize(1);
+
+        @SuppressWarnings("unchecked")
+        List<String> accounts = (List<String>) params.get(0);
+        assertThat(accounts).containsExactly(WALLET, TOKEN_ACCOUNT);
     }
 }
