@@ -1,0 +1,23 @@
+package com.solana.rwa.bridge.simulation.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.List;
+
+/**
+ * Domain-facing result of a pre-flight transaction simulation.
+ *
+ * @param success       true when the simulated transaction executed cleanly
+ * @param unitsConsumed compute units consumed by the simulation
+ * @param logs          program execution logs produced by the simulation
+ * @param errorMessage  diagnostic description of a reverted simulation
+ *                      (null on success)
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public record SimulationResultDto(
+        @JsonProperty("success") boolean success,
+        @JsonProperty("unitsConsumed") Long unitsConsumed,
+        @JsonProperty("logs") List<String> logs,
+        @JsonProperty("errorMessage") String errorMessage) {
+}
