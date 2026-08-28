@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.solana.rwa.bridge.compliance.dto.AuditExportRecordDto;
+import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
  * ISO-8601 timestamps, and explicit {@code null} members for optional
  * settlement proofs. Zero records produce the canonical {@code []} array.
  */
+@Component
 public class JsonAuditExporter implements AuditExporter {
 
     private static final String EMPTY_ARRAY = "[]";

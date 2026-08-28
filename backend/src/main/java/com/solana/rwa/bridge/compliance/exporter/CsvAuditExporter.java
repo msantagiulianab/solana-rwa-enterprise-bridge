@@ -1,6 +1,7 @@
 package com.solana.rwa.bridge.compliance.exporter;
 
 import com.solana.rwa.bridge.compliance.dto.AuditExportRecordDto;
+import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
  * fields are emitted as empty (unquoted) columns. Rows are terminated with
  * CRLF per RFC-4180.
  */
+@Component
 public class CsvAuditExporter implements AuditExporter {
 
     private static final String CANONICAL_HEADER =
