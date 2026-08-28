@@ -85,3 +85,16 @@ Implement an enterprise-grade settlement proof and compliance audit export engin
 ### Step 4.2: Documentation Updates
 - Update `README.md` with new test metrics and export endpoint documentation.
 - Append technical changelog entry in `DEVELOPMENT_JOURNAL.md`.
+
+---
+
+## Definition of Done
+
+- [x] Step 1.1 — RED unit test harness for audit query aggregation (`AuditExportServiceTest`).
+- [x] Step 1.2 — GREEN immutable settlement-proof DTO + audit query service.
+- [x] Step 2.1 — RED exporter tests (CSV + JSON).
+- [x] Step 2.2 — GREEN deterministic RFC-4180 CSV + deterministic JSON exporters (zero third-party deps).
+- [x] Step 3.1 — RED MockMvc web-layer tests.
+- [x] Step 3.2 — GREEN streaming REST export controller.
+- [x] Step 4.1 — `./mvnw clean test` → 157 tests, 0 failures, 0 errors.
+- [x] Step 4.2 — `README.md` + `DEVELOPMENT_JOURNAL.md` synchronized.

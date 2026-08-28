@@ -693,3 +693,30 @@ backend fee payer rather than the user's own Phantom wallet.
 - `solana.rpc.priority-fee-baseline-micro-lamports` (default `1000`) is the fail-safe baseline; priority-fee failure is fail-safe, while the KYC/AML compliance gate stays fail-closed.
 - Compute-unit limit fixed at `10_000` — comfortably above the mint workflow requirement while capping worst-case spend.
 
+---
+
+## 2026-08-28
+
+### Enterprise Compliance & Settlement Audit Export Engine (GREEN: 157 backend)
+
+**Plan:** Give institutional auditors a deterministic, reproducible export of the immutable settlement-proof ledger — RFC-4180 CSV and schema-compliant JSON — via a streaming REST endpoint, built strictly test-first (RED → GREEN) with zero third-party CSV/export dependencies.
+
+**TDD RED/GREEN cycles (commits `fbfb359`, `6ed5faa`, `7eacd75`):**
+- **RED** `AuditExportServiceTest` — inclusive ISO-8601 date-range filtering, exact `assetId` and execution-status (`SUCCESS`/`FAILED_COMPLIANCE`/`FAILED_RPC`) filters, combined criteria, empty-input/empty-result null-safety, and full DTO settlement-proof coverage.
+- **GREEN** `AuditExportRecordDto` + `AuditExportService` — immutable settlement-proof record (UUID `eventId`, ISO-8601 `timestamp`, KYC/OFAC flags, priority-fee/compute-budget fields, nullable signature/slot/blockhash) plus a fail-safe query pipeline that always returns a non-null list.
+- **RED** `CsvAuditExporterTest` + `JsonAuditExporterTest` — canonical header/field ordering, RFC-4180 comma/quote/newline escaping, explicit null handling, and zero-record outputs (header-only CSV / `[]` JSON).
+- **GREEN** `CsvAuditExporter` + `JsonAuditExporter` — dependency-free CSV (standard Java `StringBuilder` primitives, CRLF terminators, doubled-quote escaping) and deterministic JSON (stable field order, ISO-8601 timestamps, explicit `null` members).
+- **RED** `ComplianceAuditExportControllerTest` — MockMvc asserts for `200` CSV/JSON streaming headers, `Content-Disposition` attachment filenames, `Cache-Control: no-cache`, and structured `400`s for unsupported formats and non-ISO-8601 dates.
+- **GREEN** `ComplianceAuditExportController` — `GET /api/v1/compliance/audit-logs/export?format=csv|json&assetId={id}&startDate={iso}&endDate={iso}` binding, fail-closed parameter validation, and byte-stream delegation to the matching exporter.
+
+**Tests:**
+- `AuditExportServiceTest` (9) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `ComplianceAuditExportControllerTest` (7).
+- Backend expanded **131 → 157 tests** (111 unit + 46 integration).
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml clean test` → **157 tests, 0 failures, 0 errors** on Java 21 / Spring Boot 3.5.16.
+
+**Decisions:**
+- CSV exporter stays zero-dependency (no OpenCSV/Apache Commons CSV) so the byte output is auditable and deterministic.
+- The endpoint returns a `ResponseEntity<byte[]>` download (`Content-Disposition: attachment`) rather than a JSON envelope, giving auditors an immediately consumable artifact with `Cache-Control: no-cache`.
+
