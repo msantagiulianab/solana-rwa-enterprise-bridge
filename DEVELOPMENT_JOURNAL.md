@@ -720,3 +720,32 @@ backend fee payer rather than the user's own Phantom wallet.
 - CSV exporter stays zero-dependency (no OpenCSV/Apache Commons CSV) so the byte output is auditable and deterministic.
 - The endpoint returns a `ResponseEntity<byte[]>` download (`Content-Disposition: attachment`) rather than a JSON envelope, giving auditors an immediately consumable artifact with `Cache-Control: no-cache`.
 
+---
+
+### Pre-Flight Transaction Simulation & Rehearsal Engine (GREEN: 174 backend)
+
+**Plan:** Let enterprise operators rehearse a raw, base64-serialized Solana wire transaction against the Devnet RPC via `simulateTransaction` before any funds are committed or broadcast, returning the exact consumed compute units, program logs, and a safety-margin-padded recommended compute-unit limit — all fail-closed.
+
+**TDD RED/GREEN cycles (commits `3797bd9`, `71cfab0`, `78bcbde`):**
+- **RED** `SimulationPayloadTest` — JSON-RPC 2.0 request serialization (`sigVerify: false`, `encoding: "base64"`, `replaceRecentBlockhash: true`) and response deserialization of `err`, `logs`, `unitsConsumed`, `accounts`, and `returnData`, distinguishing null/absent `err` (success) from structured error objects.
+- **GREEN** `SimulationRequestDto` + `RpcSimulationResponseDto` + `SimulationResultDto` — strongly typed Jackson records for the outbound payload and the `context`/`value` response envelope.
+- **RED** `TransactionSimulationServiceTest` — successful CU/log extraction with the +15% safety margin, `InstructionError:[0,{Custom:1}]` → structured `SimulationExecutionException`, RPC transport failure, null response, and blank-input fail-closed paths.
+- **GREEN** `TransactionSimulationService` + `SimulationExecutionException` — `simulateTransaction` RPC adapter wiring, program-error parsing (instruction index + custom program error code), and `recommendedComputeUnitLimit = ceil(unitsConsumed × 1.15)`.
+- **RED** `TransactionSimulationControllerTest` — MockMvc asserts for `200` structured results, `400` blank/malformed bodies, `422` reverted dry-run diagnostics, `502` upstream RPC outage, and `401` missing API key.
+- **GREEN** `TransactionSimulationController` + `SimulationExceptionHandler` — `POST /api/v1/settlement/simulate` binding plus a `@RestControllerAdvice @Order(HIGHEST_PRECEDENCE)` handler that maps `SolanaRpcException`-caused failures to `502 Bad Gateway` and reverted executions to `422 Unprocessable Entity` (fail-closed).
+
+**RPC adapter wiring:**
+- `SolanaRpcAdapter.simulateTransaction(String)` assembles the positional JSON-RPC payload and reuses the generic `call(...)` path, throwing `SolanaRpcException` on transport/JSON-RPC/null-result failures — surfaced by the service as a fail-closed `SimulationExecutionException`.
+
+**Tests:**
+- `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6).
+- Backend expanded **157 → 174 tests** (128 unit + 46 integration).
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml clean test` → **174 tests, 0 failures, 0 errors** on Java 21 / Spring Boot 3.5.16.
+
+**Decisions:**
+- The rehearsal engine stays zero-third-party-SDK: JSON-RPC payloads are assembled and parsed with standard Java 21 + Jackson primitives only.
+- The compute-unit recommendation pads the measured value by 15% (rounded up) so a subsequent broadcast never lands short on budget due to scheduling variance.
+- The dedicated `SimulationExceptionHandler` runs at `Ordered.HIGHEST_PRECEDENCE` so simulation-specific `422`/`502` mapping wins over any generic handler.
+

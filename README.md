@@ -97,6 +97,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | `POST` | `/api/v1/compliance/check` | Evaluate investor eligibility (off-chain KYC + on-chain wallet existence) |
 | `GET` | `/api/v1/compliance/audit-logs/{walletAddress}` | Compliance history for a specific wallet |
 | `GET` | `/api/v1/compliance/audit-logs/export?format={csv\|json}&assetId={id}&startDate={iso}&endDate={iso}` | Stream the immutable settlement-proof audit ledger as deterministic RFC-4180 CSV or JSON |
+| `POST` | `/api/v1/settlement/simulate` | Pre-flight dry-run of a raw base64 wire transaction via `simulateTransaction` → `SimulationResultDto` (units consumed, logs, +15% recommended CU limit); fail-closed `422`/`502` |
 
 ### Frontend Feature Views (SPA Routing)
 
@@ -148,6 +149,44 @@ The immutable settlement-proof ledger is also exposed to institutional auditors 
 - Both formats stream as a `Content-Disposition: attachment` download (`audit-export-<UTC timestamp>.csv|json`) with `Cache-Control: no-cache`.
 - **Zero third-party CSV/export dependencies:** exporters rely on standard Java 21 string/stream primitives for deterministic byte formatting.
 - Fail-closed validation rejects an unsupported `format` or non-ISO-8601 `startDate`/`endDate` with a structured `400`.
+
+## Pre-Flight Transaction Simulation & Rehearsal
+
+Enterprise operators can dry-run a raw, base64-serialized Solana wire transaction against the
+Devnet RPC **before** any funds are committed or broadcast, using the node's
+`simulateTransaction` RPC:
+
+- `POST /api/v1/settlement/simulate` with `{ "encodedTransaction": "<base64 wire tx>" }`
+- Returns a structured `SimulationResultDto`: `success`, `unitsConsumed`, `logs`, and
+  `recommendedComputeUnitLimit`.
+- The JSON-RPC payload uses the fail-safe simulation config `sigVerify: false`,
+  `encoding: "base64"`, and `replaceRecentBlockhash: true`.
+
+### Compute-unit headroom buffering
+
+The rehearsal extracts the exact `unitsConsumed` and pads it with a **+15% safety margin**
+(rounded up) before recommending `recommendedComputeUnitLimit`, so a subsequent broadcast never
+lands short on budget due to scheduling variance:
+
+```
+recommendedComputeUnitLimit = ceil(unitsConsumed × 1.15)
+```
+
+### Fail-closed error mapping
+
+A dedicated `SimulationExceptionHandler` (`@Order(HIGHEST_PRECEDENCE)`) maps every rehearsal
+failure to a sanitized, non-`2xx` response so an unavailable node is never mistaken for a
+successful dry-run:
+
+| Condition | HTTP |
+|-----------|------|
+| Blank/invalid base64 body | `400 Bad Request` |
+| Missing/invalid `X-API-Key` | `401 Unauthorized` |
+| Reverted dry-run (structured Solana error) | `422 Unprocessable Entity` with `errorType`, `instructionIndex`, `programError`, `programErrorCode`, `unitsConsumed`, and `logs` |
+| Upstream RPC outage (`SolanaRpcException`) | `502 Bad Gateway` (fail-closed) |
+
+The engine uses zero third-party Solana SDKs — JSON-RPC 2.0 payloads are assembled and parsed
+with standard Java 21 + Jackson primitives only.
 
 ## Backend (Spring Boot 3.5 / Java 21)
 
@@ -280,6 +319,7 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Fail-closed KYC/AML pre-flight compliance gate in `TokenService.create` — unregistered / non-`VERIFIED` / `FLAGGED_SANCTION` investors, absent on-chain accounts, and RPC outages all throw `422` before any mint serialization (`0991822`) |
 | ✅ Done | End-to-end connected-wallet tokenization: `issuerWalletAddress` added to `CreateAssetTokenRequest`, client-side wallet guard, and live sync with `SolanaWalletService.connectedPublicKey$` (`ea39d66`) |
 | ✅ Done | Enterprise compliance & settlement audit export: `GET /api/v1/compliance/audit-logs/export` streams the immutable settlement-proof ledger as RFC-4180 CSV or deterministic JSON with zero third-party export dependencies (`7eacd75`) |
+| ✅ Done | Pre-flight transaction simulation & rehearsal engine: `POST /api/v1/settlement/simulate` dry-runs a raw base64 wire transaction via `simulateTransaction` with +15% compute-unit headroom and fail-closed `422`/`502` mapping (`78bcbde`) |
 
 ## Render Deployment
 
@@ -318,13 +358,13 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 111 |
+| Backend unit tests (`*Test.java`) | 128 |
 | Backend integration tests (`*IT.java`) | 46 |
 | Frontend specs | 47 |
 
-**Backend total: 157 passing tests** (111 unit + 46 integration).
+**Backend total: 174 passing tests** (128 unit + 46 integration).
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (9) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (9) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6)
 
 **Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (6) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6)
 
