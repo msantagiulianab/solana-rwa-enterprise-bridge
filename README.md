@@ -96,6 +96,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 | `GET` | `/api/audit-logs` | List all immutable audit trail entries |
 | `POST` | `/api/v1/compliance/check` | Evaluate investor eligibility (off-chain KYC + on-chain wallet existence) |
 | `GET` | `/api/v1/compliance/audit-logs/{walletAddress}` | Compliance history for a specific wallet |
+| `GET` | `/api/v1/compliance/audit-logs/export?format={csv\|json}&assetId={id}&startDate={iso}&endDate={iso}` | Stream the immutable settlement-proof audit ledger as deterministic RFC-4180 CSV or JSON |
 
 ### Frontend Feature Views (SPA Routing)
 
@@ -136,6 +137,17 @@ Every compliance decision is persisted through `AuditLogRepository` as an immuta
 writes a `CHECK_ELIGIBILITY` record on every evaluation, and a successful `POST /api/tokens`
 writes a `TOKENIZE_ASSET`/`APPROVED` record attributed to the on-chain mint address — while
 blocked issuers are rejected before any record write or mint occurs.
+
+### Compliance & settlement-proof export
+
+The immutable settlement-proof ledger is also exposed to institutional auditors as a deterministic, streamed download:
+
+- `GET /api/v1/compliance/audit-logs/export?format=csv|json&assetId={id}&startDate={iso}&endDate={iso}&status={SUCCESS|FAILED_COMPLIANCE|FAILED_RPC}`
+- `format=csv` returns **RFC-4180 CSV** — canonical header, CRLF row terminators, and correct comma/quote/newline escaping — as `text/csv`.
+- `format=json` returns a **deterministic, schema-compliant JSON array** — stable field order, ISO-8601 timestamps, explicit `null` for absent settlement proofs, and `[]` for zero records — as `application/json`.
+- Both formats stream as a `Content-Disposition: attachment` download (`audit-export-<UTC timestamp>.csv|json`) with `Cache-Control: no-cache`.
+- **Zero third-party CSV/export dependencies:** exporters rely on standard Java 21 string/stream primitives for deterministic byte formatting.
+- Fail-closed validation rejects an unsupported `format` or non-ISO-8601 `startDate`/`endDate` with a structured `400`.
 
 ## Backend (Spring Boot 3.5 / Java 21)
 
@@ -267,6 +279,7 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Mobile Phantom universal deep linking: `buildPhantomDeepLink()` redirects mobile users into Phantom's in-app browser |
 | ✅ Done | Fail-closed KYC/AML pre-flight compliance gate in `TokenService.create` — unregistered / non-`VERIFIED` / `FLAGGED_SANCTION` investors, absent on-chain accounts, and RPC outages all throw `422` before any mint serialization (`0991822`) |
 | ✅ Done | End-to-end connected-wallet tokenization: `issuerWalletAddress` added to `CreateAssetTokenRequest`, client-side wallet guard, and live sync with `SolanaWalletService.connectedPublicKey$` (`ea39d66`) |
+| ✅ Done | Enterprise compliance & settlement audit export: `GET /api/v1/compliance/audit-logs/export` streams the immutable settlement-proof ledger as RFC-4180 CSV or deterministic JSON with zero third-party export dependencies (`7eacd75`) |
 
 ## Render Deployment
 
@@ -305,11 +318,13 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 85 |
+| Backend unit tests (`*Test.java`) | 111 |
 | Backend integration tests (`*IT.java`) | 46 |
 | Frontend specs | 47 |
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1)
+**Backend total: 157 passing tests** (111 unit + 46 integration).
+
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (9) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4)
 
 **Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (6) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6)
 
