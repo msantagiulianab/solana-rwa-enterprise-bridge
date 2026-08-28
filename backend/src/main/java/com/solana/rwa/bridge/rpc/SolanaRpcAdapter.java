@@ -9,6 +9,8 @@ import com.solana.rwa.bridge.rpc.dto.PrioritizationFee;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalance;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalanceResult;
+import com.solana.rwa.bridge.simulation.dto.RpcSimulationResponseDto;
+import com.solana.rwa.bridge.simulation.dto.SimulationRequestDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -172,6 +174,30 @@ public class SolanaRpcAdapter {
             throw new SolanaRpcException("Solana RPC call 'sendTransaction' failed: node returned a null signature");
         }
         return envelope.result();
+    }
+
+    /**
+     * Rehearses a base64-encoded wire transaction against the node without
+     * broadcasting it.
+     *
+     * @param encodedTransaction base64-encoded serialized transaction payload
+     * @return the raw simulation outcome (including any execution error)
+     * @throws SolanaRpcException on network failure, HTTP error, JSON-RPC error, or null result
+     */
+    public RpcSimulationResponseDto.SimulationValue simulateTransaction(String encodedTransaction) {
+        SimulationRequestDto payload = SimulationRequestDto.of(encodedTransaction, requestId.getAndIncrement());
+
+        RpcEnvelope<RpcSimulationResponseDto> envelope = call(
+                "simulateTransaction", payload, new ParameterizedTypeReference<>() {
+                });
+        if (envelope.hasError()) {
+            throw new SolanaRpcException("Solana RPC call 'simulateTransaction' failed: JSON-RPC error "
+                    + envelope.error().code() + " (" + envelope.error().message() + ")");
+        }
+        if (envelope.result() == null || envelope.result().value() == null) {
+            throw new SolanaRpcException("Solana RPC call 'simulateTransaction' failed: node returned a null result");
+        }
+        return envelope.result().value();
     }
 
     /**

@@ -41,13 +41,13 @@ public record RpcSimulationResponseDto(
     public SimulationResultDto toSimulationResult() {
         if (value == null) {
             return new SimulationResultDto(false, null, List.of(),
-                    "simulateTransaction returned an empty result");
+                    "simulateTransaction returned an empty result", null);
         }
         if (!value.hasError()) {
-            return new SimulationResultDto(true, value.unitsConsumed(), value.logs(), null);
+            return new SimulationResultDto(true, value.unitsConsumed(), value.logs(), null, null);
         }
         return new SimulationResultDto(false, value.unitsConsumed(), value.logs(),
-                describeError(value.err()));
+                describeError(value.err()), null);
     }
 
     private static String describeError(JsonNode err) {
