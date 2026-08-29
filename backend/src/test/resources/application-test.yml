@@ -21,3 +21,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Mirrors the production baseline so the migration path behaves identically
+    # in tests. H2 is empty per-run, so no baseline is taken and V1 + V2 apply
+    # normally; this only guards against a pre-populated test schema.
+    baseline-on-migrate: true
+    baseline-version: 1
