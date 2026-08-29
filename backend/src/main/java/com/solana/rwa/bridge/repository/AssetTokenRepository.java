@@ -16,6 +16,8 @@ public interface AssetTokenRepository extends JpaRepository<AssetToken, UUID> {
 
     Optional<AssetToken> findByMintAddress(String mintAddress);
 
+    Optional<AssetToken> findByIdempotencyKey(String idempotencyKey);
+
     List<AssetToken> findByComplianceStatus(AssetTokenComplianceStatus complianceStatus);
 
     @Query("select t from AssetToken t where t.mintAddress is not null")

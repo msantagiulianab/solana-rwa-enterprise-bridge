@@ -20,4 +20,5 @@ export interface CreateAssetTokenRequest {
   assetName: string;
   valuationUsd: number;
   issuerWalletAddress: string;
+  idempotencyKey: string;
 }

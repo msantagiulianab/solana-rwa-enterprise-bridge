@@ -86,13 +86,18 @@ class AuditLogRepositoryIT {
 
     @Test
     void findByTimestampAfter_returnsLogsAfterInstant() {
-        Instant cutoff = Instant.now();
-        testEntityManager.persistAndFlush(auditLog("WALLET1", "MINT_TOKEN", AuditLogStatus.APPROVED, "ok"));
-        testEntityManager.persistAndFlush(auditLog("WALLET2", "MINT_TOKEN", AuditLogStatus.BLOCKED, "late flag"));
-        Instant afterAll = Instant.now();
+        Instant cutoff = Instant.parse("2025-06-01T00:00:00Z");
+
+        AuditLog older = auditLog("WALLET1", "MINT_TOKEN", AuditLogStatus.APPROVED, "ok");
+        older.setTimestamp(cutoff.plusSeconds(1));
+        testEntityManager.persistAndFlush(older);
+
+        AuditLog newer = auditLog("WALLET2", "MINT_TOKEN", AuditLogStatus.BLOCKED, "late flag");
+        newer.setTimestamp(cutoff.plusSeconds(2));
+        testEntityManager.persistAndFlush(newer);
 
         List<AuditLog> afterCutoff = auditLogRepository.findByTimestampAfter(cutoff);
-        List<AuditLog> afterAllLogs = auditLogRepository.findByTimestampAfter(afterAll);
+        List<AuditLog> afterAllLogs = auditLogRepository.findByTimestampAfter(cutoff.plusSeconds(3));
 
         assertThat(afterCutoff).isNotEmpty();
         assertThat(afterAllLogs).isEmpty();
@@ -114,5 +119,33 @@ class AuditLogRepositoryIT {
         assertThat(mostRecent).isPresent();
         assertThat(mostRecent.get().getAction()).isEqualTo("TRANSFER_TOKEN");
         assertThat(mostRecent.get().getStatus()).isEqualTo(AuditLogStatus.BLOCKED);
+    }
+
+    @Test
+    void save_persistsSettlementMetadataColumns() {
+        AuditLog log = auditLog("WALLET1", "TOKENIZE_ASSET", AuditLogStatus.APPROVED, "minted");
+        log.setIdempotencyKey("idem-settlement-1");
+        log.setAssetId("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        log.setKycVerified(true);
+        log.setOfacPassed(true);
+        log.setSettlementStatus("SUCCESS");
+        log.setComputeUnitPriceMicroLamports(5_000L);
+        log.setComputeUnitLimit(10_000);
+        log.setSolanaTransactionSignature("5Kg...signature");
+        log.setSlot(123_456L);
+        log.setBlockhash("6Fg...blockhash");
+
+        AuditLog saved = auditLogRepository.save(log);
+
+        assertThat(saved.getIdempotencyKey()).isEqualTo("idem-settlement-1");
+        assertThat(saved.getAssetId()).isEqualTo("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        assertThat(saved.getKycVerified()).isTrue();
+        assertThat(saved.getOfacPassed()).isTrue();
+        assertThat(saved.getSettlementStatus()).isEqualTo("SUCCESS");
+        assertThat(saved.getComputeUnitPriceMicroLamports()).isEqualTo(5_000L);
+        assertThat(saved.getComputeUnitLimit()).isEqualTo(10_000);
+        assertThat(saved.getSolanaTransactionSignature()).isEqualTo("5Kg...signature");
+        assertThat(saved.getSlot()).isEqualTo(123_456L);
+        assertThat(saved.getBlockhash()).isEqualTo("6Fg...blockhash");
     }
 }

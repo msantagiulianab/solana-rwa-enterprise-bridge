@@ -184,6 +184,7 @@ describe('AssetTokenizationComponent', () => {
     expect(postReq.request.body.assetName).toBe('Test Token');
     expect(postReq.request.body.valuationUsd).toBe(1000);
     expect(postReq.request.body.issuerWalletAddress).toBe(ISSUER_WALLET);
+    expect(postReq.request.body.idempotencyKey).toBeTruthy();
     postReq.flush(newToken);
 
     fixture.detectChanges();
@@ -215,6 +216,7 @@ describe('AssetTokenizationComponent', () => {
 
     component.assetName = '';
     component.valuationUsd = null;
+    component.issuerWalletAddress = ISSUER_WALLET;
     component.createAssetToken();
 
     expect(component.submitError).toBe('All fields are required and valuation must be greater than 0.');

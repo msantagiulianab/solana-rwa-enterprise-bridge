@@ -137,6 +137,7 @@ class ComplianceDtosValidationTest {
                 .assetName("Prime Manhattan Office Fund")
                 .valuationUsd(new BigDecimal("125000000.00"))
                 .issuerWalletAddress(VALID_WALLET)
+                .idempotencyKey("idem-tokenize-0001")
                 .build();
 
         assertThat(validator.validate(request)).isEmpty();
@@ -148,6 +149,7 @@ class ComplianceDtosValidationTest {
                 .assetName("Prime Manhattan Office Fund")
                 .valuationUsd(new BigDecimal("125000000.00"))
                 .issuerWalletAddress("")
+                .idempotencyKey("idem-tokenize-0001")
                 .build();
 
         Set<ConstraintViolation<AssetTokenRegistrationRequest>> violations = validator.validate(request);
@@ -163,6 +165,7 @@ class ComplianceDtosValidationTest {
                 .assetName("Prime Manhattan Office Fund")
                 .valuationUsd(new BigDecimal("125000000.00"))
                 .issuerWalletAddress("NOT_A_SOLANA_ADDRESS_0")
+                .idempotencyKey("idem-tokenize-0001")
                 .build();
 
         Set<ConstraintViolation<AssetTokenRegistrationRequest>> violations = validator.validate(request);
@@ -170,5 +173,37 @@ class ComplianceDtosValidationTest {
         assertThat(violations).isNotEmpty();
         assertThat(violations)
                 .anyMatch(v -> v.getPropertyPath().toString().equals("issuerWalletAddress"));
+    }
+
+    @Test
+    void assetTokenRegistrationRequest_rejectsBlankIdempotencyKey() {
+        AssetTokenRegistrationRequest request = AssetTokenRegistrationRequest.builder()
+                .assetName("Prime Manhattan Office Fund")
+                .valuationUsd(new BigDecimal("125000000.00"))
+                .issuerWalletAddress(VALID_WALLET)
+                .idempotencyKey("   ")
+                .build();
+
+        Set<ConstraintViolation<AssetTokenRegistrationRequest>> violations = validator.validate(request);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations)
+                .anyMatch(v -> v.getPropertyPath().toString().equals("idempotencyKey"));
+    }
+
+    @Test
+    void assetTokenRegistrationRequest_rejectsOversizedIdempotencyKey() {
+        AssetTokenRegistrationRequest request = AssetTokenRegistrationRequest.builder()
+                .assetName("Prime Manhattan Office Fund")
+                .valuationUsd(new BigDecimal("125000000.00"))
+                .issuerWalletAddress(VALID_WALLET)
+                .idempotencyKey("a".repeat(256))
+                .build();
+
+        Set<ConstraintViolation<AssetTokenRegistrationRequest>> violations = validator.validate(request);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations)
+                .anyMatch(v -> v.getPropertyPath().toString().equals("idempotencyKey"));
     }
 }

@@ -2,6 +2,7 @@ package com.solana.rwa.bridge.repository;
 
 import com.solana.rwa.bridge.entity.AssetToken;
 import com.solana.rwa.bridge.entity.AssetTokenComplianceStatus;
+import com.solana.rwa.bridge.entity.SettlementStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -129,5 +130,43 @@ class AssetTokenRepositoryIT {
 
         assertThat(minted).hasSize(1);
         assertThat(minted.get(0).getAssetName()).isEqualTo("Minted Token");
+    }
+
+    @Test
+    void findByIdempotencyKey_returnsTokenWhenPresent() {
+        testEntityManager.persistAndFlush(AssetToken.builder()
+                .assetName("Idempotent Asset")
+                .valuationUsd(new BigDecimal("100.00"))
+                .idempotencyKey("idem-123")
+                .complianceStatus(AssetTokenComplianceStatus.COMPLIANT)
+                .settlementStatus(SettlementStatus.PENDING)
+                .build());
+
+        Optional<AssetToken> found = assetTokenRepository.findByIdempotencyKey("idem-123");
+
+        assertThat(found).isPresent();
+        assertThat(found.get().getAssetName()).isEqualTo("Idempotent Asset");
+        assertThat(found.get().getSettlementStatus()).isEqualTo(SettlementStatus.PENDING);
+    }
+
+    @Test
+    void uniqueIdempotencyKey_throwsConstraintViolationOnDuplicate() {
+        String idempotencyKey = "idem-unique";
+        testEntityManager.persistAndFlush(AssetToken.builder()
+                .assetName("First Idempotent Token")
+                .valuationUsd(new BigDecimal("100.00"))
+                .idempotencyKey(idempotencyKey)
+                .complianceStatus(AssetTokenComplianceStatus.COMPLIANT)
+                .build());
+
+        AssetToken duplicate = AssetToken.builder()
+                .assetName("Duplicate Idempotent Token")
+                .valuationUsd(new BigDecimal("200.00"))
+                .idempotencyKey(idempotencyKey)
+                .complianceStatus(AssetTokenComplianceStatus.COMPLIANT)
+                .build();
+
+        assertThatThrownBy(() -> assetTokenRepository.saveAndFlush(duplicate))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

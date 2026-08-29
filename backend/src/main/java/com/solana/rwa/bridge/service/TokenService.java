@@ -5,6 +5,7 @@ import com.solana.rwa.bridge.entity.AssetToken;
 import com.solana.rwa.bridge.entity.AssetTokenComplianceStatus;
 import com.solana.rwa.bridge.entity.Investor;
 import com.solana.rwa.bridge.entity.KycStatus;
+import com.solana.rwa.bridge.entity.SettlementStatus;
 import com.solana.rwa.bridge.exception.AssetTokenNotFoundException;
 import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.repository.AssetTokenRepository;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -46,26 +48,59 @@ public class TokenService {
      * the issuer must be registered, KYC {@link KycStatus#VERIFIED}, and present
      * on-chain. Any failure aborts immediately with {@code 422} so that
      * {@link SolanaMintService#createMint()} is never invoked (fail-closed).
-     * Only a cleared issuer results in a minted token, which is persisted as
-     * {@link AssetTokenComplianceStatus#COMPLIANT}.
+     *
+     * <p>The client-supplied idempotency key is validated first and then used to
+     * guarantee exactly-once broadcast semantics: a replayed key returns the
+     * already-settled asset without dispatching a second mint, while a new key
+     * is persisted in {@link SettlementStatus#PENDING} state <em>before</em> the
+     * RPC dispatch so a failure can never leave an on-chain mint without a
+     * durable off-chain record (no orphan mints).
      */
     @Transactional
     public AssetToken create(AssetTokenRegistrationRequest request) {
+        String idempotencyKey = validateIdempotencyKey(request.getIdempotencyKey());
         String issuerWalletAddress = request.getIssuerWalletAddress();
         assertIssuerCompliant(issuerWalletAddress);
 
-        // Issue the real on-chain SPL mint BEFORE persisting the off-chain
-        // registry record. A failed RPC call aborts the tokenization rather
-        // than leaving an asset without a verifiable mint address.
-        String mintAddress = solanaMintService.createMint();
+        Optional<AssetToken> existing = assetTokenRepository.findByIdempotencyKey(idempotencyKey);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
 
-        AssetToken token = AssetToken.builder()
+        // Persist a PENDING settlement record BEFORE any RPC bytes are emitted.
+        // On retry, the unique idempotency key short-circuits above so a second
+        // broadcast is never dispatched for the same logical request.
+        AssetToken token = assetTokenRepository.save(AssetToken.builder()
                 .assetName(request.getAssetName())
                 .valuationUsd(request.getValuationUsd())
-                .mintAddress(mintAddress)
+                .idempotencyKey(idempotencyKey)
                 .complianceStatus(AssetTokenComplianceStatus.COMPLIANT)
-                .build();
-        return assetTokenRepository.save(token);
+                .settlementStatus(SettlementStatus.PENDING)
+                .build());
+
+        try {
+            String mintAddress = solanaMintService.createMint();
+            token.setMintAddress(mintAddress);
+            token.setSettlementStatus(SettlementStatus.CONFIRMED);
+            return assetTokenRepository.save(token);
+        } catch (RuntimeException ex) {
+            token.setSettlementStatus(SettlementStatus.FAILED);
+            assetTokenRepository.save(token);
+            throw ex;
+        }
+    }
+
+    private String validateIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Idempotency key is required");
+        }
+        String normalized = idempotencyKey.trim();
+        if (normalized.length() > 255) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Idempotency key must not exceed 255 characters");
+        }
+        return normalized;
     }
 
     /**

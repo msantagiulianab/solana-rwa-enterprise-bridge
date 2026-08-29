@@ -112,6 +112,7 @@ export class AssetTokenizationComponent implements OnInit {
       assetName: this.assetName.trim(),
       valuationUsd: this.valuationUsd,
       issuerWalletAddress: this.issuerWalletAddress,
+      idempotencyKey: crypto.randomUUID(),
     };
 
     this.api.createAssetToken(payload).subscribe({

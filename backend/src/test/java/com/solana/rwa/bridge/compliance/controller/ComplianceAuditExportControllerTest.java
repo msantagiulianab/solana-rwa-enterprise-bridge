@@ -67,7 +67,7 @@ class ComplianceAuditExportControllerTest {
         byte[] csvBody = "EventId,Timestamp\r\n00000000-0000-0000-0000-000000000001,2025-06-15T12:00:00Z\r\n"
                 .getBytes(StandardCharsets.UTF_8);
 
-        when(auditExportService.query(anyList(), isNull(), isNull(), isNull(), isNull()))
+        when(auditExportService.export(isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(List.of(record()));
         when(csvAuditExporter.export(anyList())).thenReturn(csvBody);
 
@@ -80,7 +80,7 @@ class ComplianceAuditExportControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"))
                 .andExpect(content().bytes(csvBody));
 
-        verify(auditExportService).query(anyList(), isNull(), isNull(), isNull(), isNull());
+        verify(auditExportService).export(isNull(), isNull(), isNull(), isNull());
         verify(csvAuditExporter).export(anyList());
         verifyNoInteractions(jsonAuditExporter);
     }
@@ -89,7 +89,7 @@ class ComplianceAuditExportControllerTest {
     void exportJson_returns200WithJsonContentTypeAndAttachmentFilename() throws Exception {
         byte[] jsonBody = "[]".getBytes(StandardCharsets.UTF_8);
 
-        when(auditExportService.query(anyList(), isNull(), isNull(), isNull(), isNull()))
+        when(auditExportService.export(isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(List.of(record()));
         when(jsonAuditExporter.export(anyList())).thenReturn(jsonBody);
 
@@ -102,7 +102,7 @@ class ComplianceAuditExportControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"))
                 .andExpect(content().bytes(jsonBody));
 
-        verify(auditExportService).query(anyList(), isNull(), isNull(), isNull(), isNull());
+        verify(auditExportService).export(isNull(), isNull(), isNull(), isNull());
         verify(jsonAuditExporter).export(anyList());
         verifyNoInteractions(csvAuditExporter);
     }
@@ -165,7 +165,7 @@ class ComplianceAuditExportControllerTest {
         Instant end = Instant.parse("2025-06-30T23:59:59Z");
         byte[] csvBody = "EventId,Timestamp\r\n".getBytes(StandardCharsets.UTF_8);
 
-        when(auditExportService.query(anyList(), eq(start), eq(end), eq("ASSET-1"), eq("SUCCESS")))
+        when(auditExportService.export(eq(start), eq(end), eq("ASSET-1"), eq("SUCCESS")))
                 .thenReturn(List.of(record()));
         when(csvAuditExporter.export(anyList())).thenReturn(csvBody);
 
@@ -177,7 +177,7 @@ class ComplianceAuditExportControllerTest {
                         .param("status", "SUCCESS"))
                 .andExpect(status().isOk());
 
-        verify(auditExportService).query(anyList(), eq(start), eq(end), eq("ASSET-1"), eq("SUCCESS"));
+        verify(auditExportService).export(eq(start), eq(end), eq("ASSET-1"), eq("SUCCESS"));
         verify(csvAuditExporter).export(anyList());
         verifyNoInteractions(jsonAuditExporter);
     }

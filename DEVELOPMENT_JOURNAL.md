@@ -749,3 +749,43 @@ backend fee payer rather than the user's own Phantom wallet.
 - The compute-unit recommendation pads the measured value by 15% (rounded up) so a subsequent broadcast never lands short on budget due to scheduling variance.
 - The dedicated `SimulationExceptionHandler` runs at `Ordered.HIGHEST_PRECEDENCE` so simulation-specific `422`/`502` mapping wins over any generic handler.
 
+
+---
+
+## 2026-08-29
+
+### Architectural Hardening: Flyway Migrations, Settlement Idempotency & Audit Export Wiring (GREEN: 188 backend + 47 frontend)
+
+**Plan:** Replace Hibernate-auto-generated DDL with versioned Flyway migrations, add settlement idempotency keys with a safe persist-before-mint flow, and wire the compliance audit export endpoint to the persisted `audit_logs` ledger instead of the empty in-memory stub.
+
+**Flyway Migration Foundation:**
+- Added `org.flywaydb:flyway-core` + `org.flywaydb:flyway-database-postgresql` to `backend/pom.xml` (Spring Boot manages the versions).
+- Production `spring.jpa.hibernate.ddl-auto` remains `validate`; the canonical schema is now owned by `src/main/resources/db/migration`.
+- `V1__baseline.sql` captures the current `investors`, `asset_tokens`, and `audit_logs` tables with their unique constraints and indexes.
+- `V2__settlement_idempotency.sql` adds `asset_tokens.idempotency_key`/`settlement_status` and the immutable settlement metadata columns on `audit_logs` (`idempotency_key`, `asset_id`, `kyc_verified`, `ofac_passed`, `settlement_status`, compute budget, transaction signature, slot, blockhash) with unique idempotency-key indexes on both tables.
+- Test profile switched from `create-drop` to `ddl-auto: none` + Flyway, so `@DataJpaTest` now exercises the real migrations against H2.
+
+**Idempotency & Safe Pre-Persistence Flow:**
+- `AssetTokenRegistrationRequest` now requires a client `idempotencyKey` (`@NotBlank` + `@Size(max=255)`).
+- `TokenService.create` validates the key, re-runs the fail-closed compliance gate, short-circuits replayed keys (`findByIdempotencyKey`) to avoid duplicate broadcasts, persists a `PENDING` `AssetToken` **before** `SolanaMintService.createMint()`, then transitions it to `CONFIRMED` (or `FAILED` on RPC abort).
+- `AssetToken` gains `idempotencyKey` + `SettlementStatus`; `AuditLog` gains the settlement-proof columns.
+
+**Audit Export Wiring:**
+- `AuditExportService` now depends on `AuditLogRepository` and exposes `export(...)`, which maps the persisted immutable `AuditLog` rows into `AuditExportRecordDto` (null-coalescing KYC/OFAC and compute-unit values) before applying the existing in-memory filters.
+- `ComplianceAuditExportController` delegates to `export(...)`; `AssetTokenController` writes `TOKENIZE_ASSET` audit rows enriched with idempotency key, asset id, KYC/OFAC flags, and `SUCCESS` settlement status.
+
+**Tests:**
+- `TokenServiceTest` 7 → 11 (pending-before-mint ordering, idempotent replay without re-broadcast, FAILED marking + rethrow, blank/oversized idempotency keys).
+- `AuditExportServiceTest` 9 → 13 (repository-backed export mapping, null coalescing, empty ledger, filtered export).
+- `ComplianceDtosValidationTest` 10 → 12; `AssetTokenControllerIT` 6 → 7; `AssetTokenRepositoryIT` 6 → 8; `AuditLogRepositoryIT` 6 → 7.
+- Hardened the timing-fragile `AuditLogRepositoryIT.findByTimestampAfter_returnsLogsAfterInstant` with explicit `Instant` fixtures.
+- Frontend: `CreateAssetTokenRequest` + `AssetTokenizationComponent` now send `crypto.randomUUID()` as the idempotency key; spec asserts the field and a pre-existing field-validation test was corrected to set a wallet first.
+
+**Verification:**
+- Backend: `backend\mvnw.cmd -f backend\pom.xml test` → **188 tests, 0 failures, 0 errors** (138 unit + 50 integration).
+- Frontend: `npm --prefix frontend run test -- --watch=false --browsers=ChromeHeadless` → **47/47 SUCCESS**.
+
+**Decisions:**
+- Flyway owns the schema; Hibernate only validates. New columns are nullable with unique indexes (Postgres/H2 allow multiple `NULL`s) so legacy rows remain valid while application-level validation enforces idempotency keys on new writes.
+- Solana RPC stays mocked in all unit tests; the idempotency flow never emits Devnet bytes for replayed keys or blocked issuers.
+

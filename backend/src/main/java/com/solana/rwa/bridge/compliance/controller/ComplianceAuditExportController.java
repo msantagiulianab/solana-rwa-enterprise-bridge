@@ -64,12 +64,10 @@ public class ComplianceAuditExportController {
         Instant start = parseInstant(startDate, "startDate");
         Instant end = parseInstant(endDate, "endDate");
 
-        // The immutable settlement-proof ledger source is wired in a later
-        // persistence phase; the query pipeline is still exercised here against
-        // the current (empty) in-memory ledger so the streaming contract and
-        // deterministic exporters remain fully testable end to end.
-        List<AuditExportRecordDto> records = auditExportService.query(
-                List.of(), start, end, assetId, status);
+        // Load the immutable settlement-proof records from the persisted audit
+        // ledger repository and apply the optional filters in the service layer.
+        List<AuditExportRecordDto> records = auditExportService.export(
+                start, end, assetId, status);
 
         if ("csv".equals(resolvedFormat)) {
             return stream(csvAuditExporter.export(records), CSV_MEDIA_TYPE, "csv");

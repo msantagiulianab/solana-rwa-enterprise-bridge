@@ -1,5 +1,6 @@
 package com.solana.rwa.bridge.controller;
 
+import com.solana.rwa.bridge.compliance.service.AuditExportService;
 import com.solana.rwa.bridge.dto.AssetTokenRegistrationRequest;
 import com.solana.rwa.bridge.entity.AssetToken;
 import com.solana.rwa.bridge.entity.AssetTokenComplianceStatus;
@@ -38,6 +39,7 @@ class AssetTokenControllerIT {
 
     private static final String API_KEY = "test-api-key";
     private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
+    private static final String IDEMPOTENCY_KEY = "idem-tokenize-0001";
 
     @Autowired
     private MockMvc mockMvc;
@@ -66,9 +68,10 @@ class AssetTokenControllerIT {
                                 {
                                   "assetName": "Prime Manhattan Office Fund",
                                   "valuationUsd": 125000000.00,
-                                  "issuerWalletAddress": "%s"
+                                  "issuerWalletAddress": "%s",
+                                  "idempotencyKey": "%s"
                                 }
-                                """.formatted(WALLET)))
+                                """.formatted(WALLET, IDEMPOTENCY_KEY)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assetName").value("Prime Manhattan Office Fund"))
                 .andExpect(jsonPath("$.mintAddress").value("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"))
@@ -76,9 +79,31 @@ class AssetTokenControllerIT {
 
         ArgumentCaptor<AuditLog> logCaptor = ArgumentCaptor.forClass(AuditLog.class);
         verify(auditLogRepository).save(logCaptor.capture());
-        assertThat(logCaptor.getValue().getWalletAddress())
+        AuditLog captured = logCaptor.getValue();
+        assertThat(captured.getWalletAddress())
                 .isEqualTo("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-        assertThat(logCaptor.getValue().getAction()).isEqualTo(AssetTokenController.ACTION_TOKENIZE_ASSET);
+        assertThat(captured.getAction()).isEqualTo(AssetTokenController.ACTION_TOKENIZE_ASSET);
+        assertThat(captured.getIdempotencyKey()).isEqualTo(IDEMPOTENCY_KEY);
+        assertThat(captured.getAssetId()).isEqualTo("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        assertThat(captured.getKycVerified()).isTrue();
+        assertThat(captured.getOfacPassed()).isTrue();
+        assertThat(captured.getSettlementStatus()).isEqualTo(AuditExportService.STATUS_SUCCESS);
+    }
+
+    @Test
+    void createToken_returns400WhenIdempotencyKeyBlank() throws Exception {
+        mockMvc.perform(post("/api/tokens")
+                        .header("X-API-Key", API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "assetName": "Prime Manhattan Office Fund",
+                                  "valuationUsd": 125000000.00,
+                                  "issuerWalletAddress": "%s",
+                                  "idempotencyKey": "  "
+                                }
+                                """.formatted(WALLET)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

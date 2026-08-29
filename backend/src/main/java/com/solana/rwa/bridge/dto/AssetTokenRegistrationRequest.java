@@ -4,6 +4,7 @@ import com.solana.rwa.bridge.validation.ValidSolanaAddress;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -15,6 +16,7 @@ import java.math.BigDecimal;
  * @param assetName           human-readable asset name
  * @param valuationUsd        USD valuation, must be greater than zero
  * @param issuerWalletAddress issuer's Solana wallet (base58, 32-44 chars)
+ * @param idempotencyKey      client-supplied unique key guarding duplicate broadcasts
  */
 @Getter
 @Builder
@@ -30,4 +32,8 @@ public class AssetTokenRegistrationRequest {
     @NotBlank(message = "issuerWalletAddress must not be blank")
     @ValidSolanaAddress(message = "issuerWalletAddress must be a valid Solana address")
     private final String issuerWalletAddress;
+
+    @NotBlank(message = "idempotencyKey must not be blank")
+    @Size(max = 255, message = "idempotencyKey must not exceed 255 characters")
+    private final String idempotencyKey;
 }

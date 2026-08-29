@@ -320,6 +320,7 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | End-to-end connected-wallet tokenization: `issuerWalletAddress` added to `CreateAssetTokenRequest`, client-side wallet guard, and live sync with `SolanaWalletService.connectedPublicKey$` (`ea39d66`) |
 | ✅ Done | Enterprise compliance & settlement audit export: `GET /api/v1/compliance/audit-logs/export` streams the immutable settlement-proof ledger as RFC-4180 CSV or deterministic JSON with zero third-party export dependencies (`7eacd75`) |
 | ✅ Done | Pre-flight transaction simulation & rehearsal engine: `POST /api/v1/settlement/simulate` dry-runs a raw base64 wire transaction via `simulateTransaction` with +15% compute-unit headroom and fail-closed `422`/`502` mapping (`78bcbde`) |
+| ✅ Done | Flyway migration foundation: `V1__baseline.sql` + `V2__settlement_idempotency.sql`, production `hibernate.ddl-auto: validate`, settlement idempotency keys and safe pre-persistence mint flow in `TokenService` |
 
 ## Render Deployment
 
@@ -358,15 +359,15 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 128 |
-| Backend integration tests (`*IT.java`) | 46 |
+| Backend unit tests (`*Test.java`) | 138 |
+| Backend integration tests (`*IT.java`) | 50 |
 | Frontend specs | 47 |
 
-**Backend total: 174 passing tests** (128 unit + 46 integration).
+**Backend total: 188 passing tests** (138 unit + 50 integration).
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (10) · `TokenServiceTest` (7) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (9) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (23) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6)
 
-**Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (6) · `AssetTokenRepositoryIT` (6) · `AuditLogRepositoryIT` (6)
+**Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (7) · `AssetTokenRepositoryIT` (8) · `AuditLogRepositoryIT` (7)
 
 **Breakdown (frontend):** `AssetTokenizationComponent` (13) · `AuditLogComponent` (11) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 

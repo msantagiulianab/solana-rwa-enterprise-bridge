@@ -1,5 +1,6 @@
 package com.solana.rwa.bridge.controller;
 
+import com.solana.rwa.bridge.compliance.service.AuditExportService;
 import com.solana.rwa.bridge.dto.AssetTokenRegistrationRequest;
 import com.solana.rwa.bridge.entity.AssetToken;
 import com.solana.rwa.bridge.entity.AuditLog;
@@ -35,7 +36,9 @@ public class AssetTokenController {
 
     /**
      * POST /api/tokens — registers a new asset token off-chain and writes an
-     * immutable audit log entry for the successful tokenization.
+     * immutable audit log entry carrying the settlement metadata (idempotency
+     * key, asset id, KYC/OFAC flags, and SUCCESS execution status) consumed by
+     * the compliance export endpoint.
      */
     @PostMapping
     public AssetToken createToken(@Valid @RequestBody AssetTokenRegistrationRequest request) {
@@ -46,6 +49,11 @@ public class AssetTokenController {
                 .action(ACTION_TOKENIZE_ASSET)
                 .status(AuditLogStatus.APPROVED)
                 .reason("Asset tokenized: " + token.getAssetName())
+                .idempotencyKey(request.getIdempotencyKey())
+                .assetId(token.getMintAddress())
+                .kycVerified(true)
+                .ofacPassed(true)
+                .settlementStatus(AuditExportService.STATUS_SUCCESS)
                 .build());
 
         return token;

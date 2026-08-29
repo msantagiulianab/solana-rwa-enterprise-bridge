@@ -68,6 +68,21 @@
         </dependency>
 
         <!--
+            Flyway: versioned, auditable schema migrations. Production runs with
+            hibernate.ddl-auto: validate, so the canonical schema is owned by the
+            versioned SQL migrations under src/main/resources/db/migration, never
+            by auto-generated Hibernate DDL.
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <!--
             Pure-Java Ed25519 (EdDSA) implementation used to generate/sign
             Solana keypairs for on-chain mint creation. Only the public
             dependency is required at runtime; all signing stays in the backend.
