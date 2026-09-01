@@ -9,6 +9,9 @@ import com.solana.rwa.bridge.rpc.dto.PrioritizationFee;
 import com.solana.rwa.bridge.rpc.dto.RpcContext;
 import com.solana.rwa.bridge.rpc.dto.RpcEnvelope;
 import com.solana.rwa.bridge.rpc.dto.RpcError;
+import com.solana.rwa.bridge.rpc.dto.SignatureStatus;
+import com.solana.rwa.bridge.rpc.dto.SignatureStatusResult;
+import com.solana.rwa.bridge.rpc.dto.SignatureStatusesResult;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalance;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalanceResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +56,7 @@ class SolanaRpcAdapterTest {
     private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
     private static final String TOKEN_ACCOUNT = "2mN7kqwQ1dPt1qFYGm2Y7yGxVcX9n8zL4v5Wm6pQq7rS8tU";
     private static final String SYSTEM_OWNER = "11111111111111111111111111111111";
+    private static final String TRANSACTION_SIGNATURE = "5KtD3WZkYw8QxG9mN1vB2cX7pL4sR6aH9uJ3fE5gQ7iT2oY8kL1zM4nP6oA5bC3dF7eG9hI2jK4lM6nO8pQ1rS3tU";
     private static final long BASELINE_PRIORITY_FEE = 2_500L;
 
     @Mock
@@ -505,5 +510,119 @@ class SolanaRpcAdapterTest {
         @SuppressWarnings("unchecked")
         List<String> accounts = (List<String>) params.get(0);
         assertThat(accounts).containsExactly(WALLET, TOKEN_ACCOUNT);
+    }
+
+    // ------------------------------------------------------------------
+    // getSignatureStatuses
+    // ------------------------------------------------------------------
+
+    @Test
+    void getSignatureStatuses_returnsFinalizedResultAndSendsSearchTransactionHistory() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<SignatureStatusesResult> envelope = new RpcEnvelope<>(
+                "2.0",
+                new SignatureStatusesResult(new RpcContext(123L),
+                        List.of(new SignatureStatus(123L, null, "finalized", null))),
+                null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        List<SignatureStatusResult> results = adapter.getSignatureStatuses(List.of(TRANSACTION_SIGNATURE));
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).signature()).isEqualTo(TRANSACTION_SIGNATURE);
+        assertThat(results.get(0).slot()).isEqualTo(123L);
+        assertThat(results.get(0).confirmationStatus()).isEqualTo("finalized");
+        assertThat(results.get(0).isFinalized()).isTrue();
+        assertThat(results.get(0).hasError()).isFalse();
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(bodySpec).body(bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) bodyCaptor.getValue();
+        assertThat(payload).containsEntry("method", "getSignatureStatuses");
+
+        @SuppressWarnings("unchecked")
+        List<Object> params = (List<Object>) payload.get("params");
+        assertThat(params).hasSize(2);
+
+        @SuppressWarnings("unchecked")
+        List<String> signatures = (List<String>) params.get(0);
+        assertThat(signatures).containsExactly(TRANSACTION_SIGNATURE);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = (Map<String, Object>) params.get(1);
+        assertThat(config).containsEntry("searchTransactionHistory", true);
+    }
+
+    @Test
+    void getSignatureStatuses_returnsConfirmedStatusForPendingTransaction() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<SignatureStatusesResult> envelope = new RpcEnvelope<>(
+                "2.0",
+                new SignatureStatusesResult(new RpcContext(100L),
+                        List.of(new SignatureStatus(100L, 31L, "confirmed", null))),
+                null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        List<SignatureStatusResult> results = adapter.getSignatureStatuses(List.of(TRANSACTION_SIGNATURE));
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).confirmationStatus()).isEqualTo("confirmed");
+        assertThat(results.get(0).confirmations()).isEqualTo(31L);
+        assertThat(results.get(0).isFinalized()).isFalse();
+        assertThat(results.get(0).isConfirmed()).isTrue();
+    }
+
+    @Test
+    void getSignatureStatuses_mapsTransactionErrorPayload() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        Object err = Map.of("InstructionError", List.of(0, "Custom"));
+        RpcEnvelope<SignatureStatusesResult> envelope = new RpcEnvelope<>(
+                "2.0",
+                new SignatureStatusesResult(new RpcContext(200L),
+                        List.of(new SignatureStatus(200L, null, "finalized", err))),
+                null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        List<SignatureStatusResult> results = adapter.getSignatureStatuses(List.of(TRANSACTION_SIGNATURE));
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).hasError()).isTrue();
+        assertThat(results.get(0).isFinalized()).isFalse();
+        assertThat(results.get(0).err()).isSameAs(err);
+    }
+
+    @Test
+    void getSignatureStatuses_throwsSolanaRpcExceptionOnNullResult() {
+        stubChain();
+        when(bodySpec.retrieve()).thenReturn(responseSpec);
+        RpcEnvelope<SignatureStatusesResult> envelope = new RpcEnvelope<>(
+                "2.0", null, null, 1L);
+        when(responseSpec.body(any(ParameterizedTypeReference.class))).thenReturn(envelope);
+
+        assertThatThrownBy(() -> adapter.getSignatureStatuses(List.of(TRANSACTION_SIGNATURE)))
+                .isInstanceOf(SolanaRpcException.class)
+                .hasMessageContaining("getSignatureStatuses");
+    }
+
+    @Test
+    void getSignatureStatuses_throwsSolanaRpcExceptionOnNetworkTimeout() {
+        stubChain();
+        when(bodySpec.retrieve()).thenThrow(new ResourceAccessException("Read timed out"));
+
+        assertThatThrownBy(() -> adapter.getSignatureStatuses(List.of(TRANSACTION_SIGNATURE)))
+                .isInstanceOf(SolanaRpcException.class)
+                .hasMessageContaining("getSignatureStatuses");
+    }
+
+    @Test
+    void getSignatureStatuses_returnsEmptyListWithoutRpcCallForEmptyInput() {
+        List<SignatureStatusResult> results = adapter.getSignatureStatuses(List.of());
+
+        assertThat(results).isEmpty();
+        verify(restClient, never()).post();
     }
 }

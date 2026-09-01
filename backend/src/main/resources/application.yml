@@ -53,6 +53,14 @@ solana:
     url: ${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}
     private-key: ${SOLANA_DEVNET_PRIVATE_KEY:}
     priority-fee-baseline-micro-lamports: ${SOLANA_PRIORITY_FEE_BASELINE:1000}
+  # Finality confirmation outbox worker. Max attempts is per-record
+  # (finality_outbox.max_poll_attempts, column default 30); the values below
+  # govern the poll cadence, backoff schedule, and RPC batch size.
+  outbox:
+    poll-interval-ms: ${SOLANA_OUTBOX_POLL_INTERVAL_MS:5000}
+    base-backoff-ms: ${SOLANA_OUTBOX_BASE_BACKOFF_MS:2000}
+    max-backoff-ms: ${SOLANA_OUTBOX_MAX_BACKOFF_MS:60000}
+    batch-size: ${SOLANA_OUTBOX_BATCH_SIZE:100}
 
 # ------------------------------------------------------------------
 # Security – API key gate for mutating routes (POST/PATCH/PUT/DELETE).
