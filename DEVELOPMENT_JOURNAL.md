@@ -789,3 +789,44 @@ backend fee payer rather than the user's own Phantom wallet.
 - Flyway owns the schema; Hibernate only validates. New columns are nullable with unique indexes (Postgres/H2 allow multiple `NULL`s) so legacy rows remain valid while application-level validation enforces idempotency keys on new writes.
 - Solana RPC stays mocked in all unit tests; the idempotency flow never emits Devnet bytes for replayed keys or blocked issuers.
 
+
+---
+
+## 2026-09-01
+
+### Maritime Domain Models & Hexagonal Compliance Wiring (GREEN: 220 backend)
+
+**Plan:** Introduce the maritime settlement domain (Bill of Lading, container
+consignments, canal transit settlements) and wire an external maritime-clearance
+boundary behind a pure-Java Hexagonal SPI (`MaritimeClearancePort`), backed by a
+deterministic 4-scenario simulated adapter for the Week 2 DvP settlement demo.
+
+**Flyway V4:** `V4__create_maritime_domain_tables.sql` (additive) — `bills_of_lading`,
+`container_consignments`, `canal_transit_settlements` with FKs (CASCADE), a logical
+`outbox_entry_id` → `finality_outbox`, and indexes on `vessel_imo`, `bl_number`,
+`clearance_status`. V1/V2/V3 history untouched.
+
+**Hexagonal SPI:** `MaritimeClearancePort.evaluateClearance(...)` + immutable records
+`MaritimeClearanceRequest`, `MaritimeClearanceResult`, `ClearanceReasonCode` — zero
+Spring imports. `SimulatedMaritimeClearanceAdapter` deterministically maps:
+IMO9999999/blacklisted consignee → SANCTIONED (OFAC), HOLD seal/CONT-HOLD-001 →
+HELD_CUSTOMS (ANA SIGA), UNVERIFIED carrier → REJECTED (ACP VUMPA), else CLEARED.
+
+**Settlement service:** `MaritimeSettlementService` orchestrates the fail-closed flow:
+only a CLEARED decision settles and enqueues a CONFIRMED `finality_outbox` row; any
+non-cleared decision transitions the BOL fail-closed and throws
+`MaritimeComplianceException` (mapped to 422), producing no outbox and no token action.
+
+**Tests:** `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (5)
+· `MaritimeRepositoryIT` (5). Backend expanded 204 → 220 tests (163 unit + 57 integration).
+
+**Verification:** `backend/mvnw.cmd clean test` → **220 tests, 0 failures, 0 errors**.
+
+**Decisions:**
+- Maritime bounded context is self-contained under `maritime/*` (domain, repository,
+  port, adapter.out.simulation, service, exception) for clean Hexagonal separation.
+- The service depends only on the port + JPA repositories — never on Solana RPC/token
+  services — so fail-closed paths are structurally incapable of a token broadcast.
+- `GlobalExceptionHandler` maps `MaritimeComplianceException` → 422 and
+  `BillOfLadingNotFoundException` → 404 (no stack trace leak).
+
