@@ -792,6 +792,58 @@ backend fee payer rather than the user's own Phantom wallet.
 
 ---
 
+## 2026-08-30
+
+### Finality Confirmation Outbox Worker (GREEN: 204 backend)
+
+**Plan:** Add a durable, resumable finality outbox and a `@Scheduled` background
+daemon that advances on-chain settlement records from `CONFIRMED` to `FINALIZED`
+(or `FAILED`/`EXPIRED`) by polling `SolanaRpcAdapter#getSignatureStatuses` with
+exponential backoff — fail-closed, idempotent, and never prematurely finalizing.
+
+**Flyway V3:** `V3__extend_settlement_status_and_outbox.sql` (additive) — creates the
+durable `finality_outbox` table (`id`, `asset_token_id`, unique `idempotency_key`,
+`solana_transaction_signature`, `status`, `commitment_level`, `poll_attempts`,
+`max_poll_attempts` default 30, `last_polled_at`, `next_poll_at`, `error_message`,
+`settled_at`, audit timestamps) plus the poller hot-path indexes
+`idx_settlements_outbox_polling` (`status`, `commitment_level`, `next_poll_at`) and
+`idx_finality_outbox_next_poll_at` (`next_poll_at`). `SettlementStatus` is extended
+additively with `FINALIZED`/`EXPIRED` — no rewrite of applied V1/V2 history.
+
+**Scheduled daemon:** `FinalityConfirmationWorker` (the finality confirmation outbox
+worker) — `@Scheduled(fixedDelayString = "${solana.outbox.poll-interval-ms:5000}")` +
+`@Transactional` `processDueEntries()` polls due `CONFIRMED` rows in configurable
+batches, calls `SolanaRpcAdapter#getSignatureStatuses(List)`, and applies the
+transition: `finalized` → `FINALIZED` (with `settledAt`); transaction error → `FAILED`
+(sanitized `error_message`); `processed`/`confirmed`/missing signature → remain
+`CONFIRMED` with exponential backoff (2s → 4s → 8s … capped at
+`solana.outbox.max-backoff-ms`), transitioning to `EXPIRED` once `max_poll_attempts`
+is exhausted. Transient RPC transport failures retry inline and never prematurely
+finalize.
+
+**RPC adapter:** `SolanaRpcAdapter#getSignatureStatuses(List<String>)` + the
+`SignatureStatusResult` DTO parse the JSON-RPC `getSignatureStatuses` response
+(`context.slot`, `value[].confirmationStatus`, `value[].err`).
+
+**Tests:** `SolanaRpcAdapterTest` extended (+6) for `getSignatureStatuses`
+serialization/deserialization (finalized, confirmed, transaction-error, null result,
+network timeout, empty-input short-circuit); `FinalityConfirmationWorkerTest` (8) for
+finality transitions, backoff schedule, timeout/fail-closed, and idempotency;
+`FinalityOutboxRepositoryIT` (2) for the V3 schema. Backend expanded **188 → 204
+tests** (152 unit + 52 integration).
+
+**Verification:** `backend/mvnw.cmd clean test` → **204 tests, 0 failures, 0 errors**.
+
+**Decisions:**
+- The outbox is its own durable table so polling bookkeeping never mutates the
+  immutable `audit_logs` ledger or the `asset_tokens` source of truth.
+- The scheduled entry point doubles as the transaction boundary (proxy-invoked
+  `@Scheduled` + `@Transactional`) so each poll cycle commits atomically.
+- Only `CLEARED`-gated settlement produces `CONFIRMED` outbox rows, preserving the
+  fail-closed invariant end-to-end.
+
+---
+
 ## 2026-09-01
 
 ### Maritime Domain Models & Hexagonal Compliance Wiring (GREEN: 220 backend)
@@ -829,4 +881,31 @@ non-cleared decision transitions the BOL fail-closed and throws
   services — so fail-closed paths are structurally incapable of a token broadcast.
 - `GlobalExceptionHandler` maps `MaritimeComplianceException` → 422 and
   `BillOfLadingNotFoundException` → 404 (no stack trace leak).
+
+---
+
+## 2026-09-03
+
+### Task 3 Step 1: Maritime REST Controllers & DTOs (GREEN: 229 backend)
+
+**Plan:** Expose the maritime domain over an authenticated REST API and wire the
+web layer to `MaritimeSettlementService`.
+
+**Controller & DTOs:** `MaritimeSettlementController` (`/api/v1/maritime`) exposes
+`POST /bills-of-lading` (201), `POST /settlements/{id}/evaluate` (200/422),
+`POST /settlements/{id}/execute` (200), `GET /settlements/{id}`, and
+`GET /bills-of-lading/{id}`. Mutating routes are gated by the existing `X-API-Key`
+interceptor; request DTOs use Jakarta Bean Validation (`@NotBlank`,
+`@ValidSolanaAddress`, `@NotNull`, `@Positive`). Response contracts are typed records
+under `maritime/dto`.
+
+**Service:** `MaritimeSettlementService` gained five delegate methods
+(`registerBillOfLading`, `evaluateSettlement`, `executeSettlement`, `getSettlement`,
+`getBillOfLading`) as minimal stubs to be wired to persistence/outbox in Steps 2–3.
+
+**Tests:** `MaritimeSettlementControllerTest` (9) — 401 gate, 201 register, 400
+validation, 200 evaluate/execute/reads, 422 sanctions fail-closed. Backend expanded
+**220 → 229 tests** (172 unit + 57 integration).
+
+**Verification:** `backend/mvnw.cmd clean test` → **229 tests, 0 failures, 0 errors**.
 

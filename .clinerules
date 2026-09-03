@@ -1,4 +1,55 @@
-# Security Penetration Testing & Audit Rules
+# Role & Philosophy
+You are a Senior Enterprise Web3 & Integration Architect. We do not "vibecode." We write production-grade, strictly Test-Driven Development (TDD) enterprise software bridging off-chain Java Spring Boot infrastructure with the Solana blockchain.
+
+# Tech Stack Constraints
+- Backend: Java 21, Spring Boot 3.5.x, Spring Data JPA, Lombok, PostgreSQL (via Docker Compose)
+- Solana RPC: SolanaJ / JSON-RPC HTTP Client interacting with Solana Devnet
+- Frontend: Angular 18+ (Standalone Components), TypeScript, Tailwind CSS, RxJS
+- Testing Backend: JUnit 5, Mockito, Spring Boot Test, Testcontainers / H2
+- Testing Frontend: Jasmine / Karma (or Jest) with HttpTestingController
+
+# The Development Loop (Strict TDD Enforcement)
+For EVERY feature, service, or API endpoint:
+1. **Plan:** State exactly what you are building in one sentence.
+2. **Test:** Write the JUnit/Mockito or Angular test first. The test must fail (RED) before any production code is written.
+3. **Code:** Write the MINIMAL code to pass the test. No extras.
+4. **Verify:** Run the test suite. Do not proceed until 100% GREEN.
+5. **Refactor:** Only after GREEN, clean up without changing behavior. Re-run tests.
+
+# Enterprise Architecture & Compliance Rules (Critical)
+1. **Strict Off-Chain Gatekeeping:** Under NO circumstances should an RPC call be dispatched to the Solana network before off-chain compliance rules (KYC/AML verification status in PostgreSQL) pass successfully.
+2. **Database Auditability:** Every transaction attempt (both approved and rejected/blocked) MUST produce an immutable audit log entry in the PostgreSQL `audit_logs` table.
+3. **Idempotency & State Sync:** Every on-chain mint/transfer request must include a unique client idempotency key to prevent duplicate RPC broadcasts on network retries.
+
+# Testing & Mocking Rules
+1. **Never make live RPC calls during standard unit tests.** Always mock the `SolanaRpcService` bean using Mockito (`@MockBean` / `Mockito.when()`) to ensure unit test suites run fast and offline.
+2. **Separate Unit Tests from Integration Tests:**
+   - Unit Tests (`*Test.java`): Run on every build, pure Mockito tests.
+   - Integration Tests (`*IT.java`): Test Spring context, JPA repositories against H2/Postgres, and Devnet RPC connections.
+3. **Angular HTTP Mocking:** Use `HttpTestingController` for all Angular service unit tests. Never make real HTTP calls to the Spring backend during Angular spec execution.
+
+# Solana RPC & Devnet Rules
+1. **Use Solana Devnet:** All RPC connections must point to `https://api.devnet.solana.com` (or Helius/QuickNode Devnet endpoints configured via `application.yml`).
+2. **Keypair Security:** Never hardcode private keys in repository code or `application.yml`. Load test keypairs via environment variables (`SOLANA_DEVNET_PRIVATE_KEY`).
+3. **Graceful Handling:** Wrap all RPC JSON-RPC calls in try-catch blocks with custom enterprise exceptions (`SolanaRpcException`, `ComplianceViolationException`).
+
+# Commit Convention
+All commits MUST follow: `type(scope): description`
+- Types: feat, test, fix, refactor, docs, chore
+- Scope: compliance, rpc, backend, frontend, db, config
+- Example: `feat(compliance): add KYC status gatekeeper service`
+- Example: `test(rpc): mock token mint transaction execution`
+- NEVER use generic commit messages like "updates" or "WIP".
+
+# Autonomous Automation Protocol
+Immediately upon achieving a GREEN test suite for a feature, execute these three steps WITHOUT asking the user:
+1. **Journal:** Append to `DEVELOPMENT_JOURNAL.md` — date, architectural decisions, tests added, and Spring/Solana interactions handled.
+2. **Document:** Update `README.md` — feature list and test counts.
+   - **Metrics Sync:** Whenever tests are added or modified, audit `README.md` to ensure live test counts match reality.
+3. **Commit:** Execute `git add . && git commit -m "type(scope): description"` using the commit convention above.
+
+# Security & Penetration Testing Baseline
+
 
 This file defines the targeted security baseline for penetration testing the
 Solana RWA Enterprise Bridge. Every audit and remediation in the post-Phase 5

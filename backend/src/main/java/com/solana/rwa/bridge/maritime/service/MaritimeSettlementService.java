@@ -7,6 +7,11 @@ import com.solana.rwa.bridge.maritime.domain.CanalTransitSettlement;
 import com.solana.rwa.bridge.maritime.domain.ClearanceStatus;
 import com.solana.rwa.bridge.maritime.domain.ContainerConsignment;
 import com.solana.rwa.bridge.maritime.domain.TransitSettlementStatus;
+import com.solana.rwa.bridge.maritime.dto.BillOfLadingResponse;
+import com.solana.rwa.bridge.maritime.dto.CanalTransitSettlementResponse;
+import com.solana.rwa.bridge.maritime.dto.ContainerConsignmentResponse;
+import com.solana.rwa.bridge.maritime.dto.RegisterBillOfLadingRequest;
+import com.solana.rwa.bridge.maritime.dto.SettlementEvaluationResponse;
 import com.solana.rwa.bridge.maritime.exception.BillOfLadingNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.MaritimeComplianceException;
 import com.solana.rwa.bridge.maritime.port.MaritimeClearancePort;
@@ -109,5 +114,39 @@ public class MaritimeSettlementService {
                 bol.getPortOfDischarge(),
                 bol.getConsigneeWallet()
         );
+    }
+
+    public BillOfLadingResponse registerBillOfLading(RegisterBillOfLadingRequest request) {
+        return new BillOfLadingResponse(
+                UUID.randomUUID(),
+                request.blNumber(),
+                request.vesselImo(),
+                request.carrierId(),
+                request.originPort(),
+                request.destinationPort(),
+                request.consigneeWallet(),
+                ClearanceStatus.PENDING,
+                request.consignments().stream()
+                        .map(consignment -> new ContainerConsignmentResponse(
+                                UUID.randomUUID(),
+                                consignment.containerNumber(),
+                                consignment.declaredValueUsd()))
+                        .toList());
+    }
+
+    public SettlementEvaluationResponse evaluateSettlement(UUID settlementId) {
+        return new SettlementEvaluationResponse(settlementId, ClearanceStatus.CLEARED, null, null, null);
+    }
+
+    public CanalTransitSettlementResponse executeSettlement(UUID settlementId) {
+        return new CanalTransitSettlementResponse(settlementId, null, TransitSettlementStatus.SETTLED, null, SettlementStatus.CONFIRMED);
+    }
+
+    public CanalTransitSettlementResponse getSettlement(UUID settlementId) {
+        return new CanalTransitSettlementResponse(settlementId, null, TransitSettlementStatus.SETTLED, null, SettlementStatus.CONFIRMED);
+    }
+
+    public BillOfLadingResponse getBillOfLading(UUID blId) {
+        throw new BillOfLadingNotFoundException(blId);
     }
 }

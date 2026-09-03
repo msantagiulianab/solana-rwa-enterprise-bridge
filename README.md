@@ -323,6 +323,7 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Flyway migration foundation: `V1__baseline.sql` + `V2__settlement_idempotency.sql`, production `hibernate.ddl-auto: validate`, settlement idempotency keys and safe pre-persistence mint flow in `TokenService` |
 | ✅ Done | Finality confirmation outbox worker: `@Scheduled` daemon polls the durable `finality_outbox` and advances `CONFIRMED → FINALIZED / FAILED / EXPIRED` via `getSignatureStatuses` with exponential backoff and fail-closed timeout handling |
 | ✅ Done | Maritime domain & clearance SPI: `BillOfLading` / `ContainerConsignment` / `CanalTransitSettlement` entities, Hexagonal `MaritimeClearancePort` + deterministic `SimulatedMaritimeClearanceAdapter`, fail-closed `MaritimeSettlementService` with `finality_outbox` enqueue |
+| ✅ Done | Maritime REST endpoints & DTOs: authenticated `MaritimeSettlementController` (`POST /bills-of-lading` 201, `POST /settlements/{id}/evaluate` 200/422, `POST /settlements/{id}/execute` 200, `GET` reads) with Jakarta Bean Validation request/response records |
 
 ## Render Deployment
 
@@ -361,13 +362,13 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 163 |
+| Backend unit tests (`*Test.java`) | 172 |
 | Backend integration tests (`*IT.java`) | 57 |
 | Frontend specs | 47 |
 
-**Backend total: 220 passing tests** (163 unit + 57 integration).
+**Backend total: 229 passing tests** (172 unit + 57 integration).
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (5)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `ComputeBudgetInstructionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (5) · `MaritimeSettlementControllerTest` (9)
 
 **Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (7) · `AssetTokenRepositoryIT` (8) · `AuditLogRepositoryIT` (7) · `FinalityOutboxRepositoryIT` (2) · `MaritimeRepositoryIT` (5)
 
