@@ -202,7 +202,8 @@ class MaritimeSettlementControllerTest {
                 List.of(new ContainerConsignmentResponse(
                         CONSIGNMENT_ID,
                         "CONT-001",
-                        new BigDecimal("12500.50"))));
+                        new BigDecimal("12500.50"))),
+                SETTLEMENT_ID);
     }
 
     private CanalTransitSettlementResponse settlementResponse(TransitSettlementStatus status) {

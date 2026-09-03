@@ -948,3 +948,41 @@ missing-settlement 404, and non-cleared 422 fail-closed. Backend expanded
 - Settlement transition to `SETTLED` + `outboxEntryId` is persisted in the same
   `@Transactional` unit as the outbox enqueue for atomicity/auditability.
 
+---
+
+## 2026-09-03
+
+### Task 3 Step 3: End-to-End Maritime DvP Simulation Harness (GREEN: 234 backend)
+
+**Plan:** Verify the full authenticated maritime DvP pipeline end-to-end — carrier
+eBL registration → clearance evaluation → atomic SPL settlement → finality outbox
+enqueue — with a full `@SpringBootTest` + MockMvc harness driving the deterministic
+`SimulatedMaritimeClearanceAdapter`.
+
+**Orchestration wired:**
+- `registerBillOfLading` now persists the `BillOfLading` aggregate (with cascaded
+  consignments) and an `INITIALIZED` `CanalTransitSettlement`, returning the linked
+  `settlementId` in `BillOfLadingResponse`.
+- `evaluateSettlement` now loads the settlement, runs
+  `MaritimeClearancePort.evaluateClearance`, persists the decision on the BOL, and
+  returns a typed `SettlementEvaluationResponse` (`CLEARED` / `SANCTIONED`).
+- `executeSettlement` (Step 2) enforces the fail-closed gate: only a `CLEARED` BOL
+  enqueues a `CONFIRMED` finality outbox row and marks the settlement `SETTLED`;
+  a sanctioned BOL throws `MaritimeComplianceException` (422) with zero outbox rows.
+
+**Tests:** `MaritimeSettlementE2EIT` (2): happy path (register → evaluate CLEARED →
+execute → exactly 1 `CONFIRMED` outbox row) and fail-closed path (register
+IMO9999999 → evaluate SANCTIONED → execute 422 → 0 outbox rows). Backend expanded
+**232 → 234 tests** (175 unit + 59 integration).
+
+**Verification:** `backend/mvnw.cmd clean test` → **234 tests, 0 failures, 0 errors**.
+
+**Decisions:**
+- The register endpoint returns the settlement id so the evaluate/execute triggers
+  are keyed to a persisted settlement row, keeping the REST contract typed.
+- H2 (`DB_CLOSE_DELAY=-1`) persists across test methods in the shared context, so
+  the E2E test resets the four maritime tables in `@BeforeEach` (children before
+  parents) for deterministic absolute assertions.
+- No Solana RPC call is made on the blocked path; the happy path only enqueues a
+  durable outbox row for the existing scheduled finality worker.
+

@@ -11,6 +11,7 @@ import com.solana.rwa.bridge.maritime.dto.BillOfLadingResponse;
 import com.solana.rwa.bridge.maritime.dto.CanalTransitSettlementResponse;
 import com.solana.rwa.bridge.maritime.dto.ContainerConsignmentResponse;
 import com.solana.rwa.bridge.maritime.dto.RegisterBillOfLadingRequest;
+import com.solana.rwa.bridge.maritime.dto.RegisterContainerConsignmentRequest;
 import com.solana.rwa.bridge.maritime.dto.SettlementEvaluationResponse;
 import com.solana.rwa.bridge.maritime.exception.BillOfLadingNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.CanalTransitSettlementNotFoundException;
@@ -28,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -48,6 +51,16 @@ import java.util.UUID;
 public class MaritimeSettlementService {
 
     public static final String COMMITMENT_CONFIRMED = "CONFIRMED";
+
+    private static final String DEFAULT_CARRIER_CODE = "UNKNOWN";
+    private static final String DEFAULT_PORT = "UNKNOWN";
+    private static final String DEFAULT_CARGO_DESCRIPTION = "Containerized maritime consignment";
+    private static final String DEFAULT_SEAL_PREFIX = "SEAL-";
+    private static final BigDecimal DEFAULT_GROSS_WEIGHT_KG = new BigDecimal("24000.00");
+    private static final String DEFAULT_TRANSIT_REF_PREFIX = "TRANSIT-";
+    private static final BigDecimal DEFAULT_TRANSIT_FEE_USD = new BigDecimal("0.00");
+    private static final String DEFAULT_SETTLEMENT_TOKEN_MINT = "MINT-ADDR";
+    private static final String DEFAULT_ESCROW_ACCOUNT = "ESCROW-ADDR";
 
     private final BillOfLadingRepository billOfLadingRepository;
     private final CanalTransitSettlementRepository canalTransitSettlementRepository;
@@ -117,26 +130,104 @@ public class MaritimeSettlementService {
         );
     }
 
+    @Transactional
     public BillOfLadingResponse registerBillOfLading(RegisterBillOfLadingRequest request) {
+        BillOfLading bol = BillOfLading.builder()
+                .blNumber(request.blNumber())
+                .carrierCode(defaultIfBlank(request.carrierId(), DEFAULT_CARRIER_CODE))
+                .vesselImo(request.vesselImo())
+                .portOfLoading(defaultIfBlank(request.originPort(), DEFAULT_PORT))
+                .portOfDischarge(defaultIfBlank(request.destinationPort(), DEFAULT_PORT))
+                .shipperWallet(request.consigneeWallet())
+                .consigneeWallet(request.consigneeWallet())
+                .declaredValueUsd(declaredValue(request))
+                .cargoDescription(DEFAULT_CARGO_DESCRIPTION)
+                .clearanceStatus(ClearanceStatus.PENDING)
+                .build();
+
+        request.consignments().forEach(consignment -> bol.addConsignment(
+                ContainerConsignment.builder()
+                        .containerNumber(consignment.containerNumber())
+                        .sealNumber(DEFAULT_SEAL_PREFIX + consignment.containerNumber())
+                        .grossWeightKg(DEFAULT_GROSS_WEIGHT_KG)
+                        .isHazardous(false)
+                        .build()));
+
+        BillOfLading savedBol = billOfLadingRepository.save(bol);
+
+        CanalTransitSettlement settlement = canalTransitSettlementRepository.save(
+                CanalTransitSettlement.builder()
+                        .billOfLading(savedBol)
+                        .transitBookingReference(DEFAULT_TRANSIT_REF_PREFIX + UUID.randomUUID())
+                        .transitFeeUsd(DEFAULT_TRANSIT_FEE_USD)
+                        .settlementTokenMint(DEFAULT_SETTLEMENT_TOKEN_MINT)
+                        .escrowAccount(DEFAULT_ESCROW_ACCOUNT)
+                        .status(TransitSettlementStatus.INITIALIZED)
+                        .build());
+
+        List<ContainerConsignmentResponse> consignmentResponses = new ArrayList<>();
+        List<ContainerConsignment> persistedConsignments = savedBol.getConsignments();
+        for (int i = 0; i < persistedConsignments.size(); i++) {
+            ContainerConsignment consignment = persistedConsignments.get(i);
+            BigDecimal declaredValueUsd = request.consignments().get(i).declaredValueUsd();
+            consignmentResponses.add(new ContainerConsignmentResponse(
+                    consignment.getId(), consignment.getContainerNumber(), declaredValueUsd));
+        }
+
         return new BillOfLadingResponse(
-                UUID.randomUUID(),
+                savedBol.getId(),
                 request.blNumber(),
                 request.vesselImo(),
                 request.carrierId(),
                 request.originPort(),
                 request.destinationPort(),
                 request.consigneeWallet(),
-                ClearanceStatus.PENDING,
-                request.consignments().stream()
-                        .map(consignment -> new ContainerConsignmentResponse(
-                                UUID.randomUUID(),
-                                consignment.containerNumber(),
-                                consignment.declaredValueUsd()))
-                        .toList());
+                savedBol.getClearanceStatus(),
+                consignmentResponses,
+                settlement.getId());
     }
 
+    @Transactional
     public SettlementEvaluationResponse evaluateSettlement(UUID settlementId) {
-        return new SettlementEvaluationResponse(settlementId, ClearanceStatus.CLEARED, null, null, null);
+        CanalTransitSettlement settlement = canalTransitSettlementRepository.findById(settlementId)
+                .orElseThrow(() -> new CanalTransitSettlementNotFoundException(settlementId));
+        BillOfLading bol = settlement.getBillOfLading();
+
+        MaritimeClearanceResult clearance = maritimeClearancePort.evaluateClearance(buildRequest(bol));
+
+        bol.setClearanceStatus(clearance.status());
+        billOfLadingRepository.save(bol);
+
+        return new SettlementEvaluationResponse(
+                settlementId,
+                clearance.status(),
+                authority(clearance),
+                reasonCode(clearance),
+                clearance.referenceId());
+    }
+
+    private BigDecimal declaredValue(RegisterBillOfLadingRequest request) {
+        return request.consignments().stream()
+                .map(RegisterContainerConsignmentRequest::declaredValueUsd)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String defaultIfBlank(String value, String defaultValue) {
+        return value != null && !value.isBlank() ? value : defaultValue;
+    }
+
+    private String authority(MaritimeClearanceResult clearance) {
+        if (clearance.status() == ClearanceStatus.CLEARED || clearance.reasonCode() == null) {
+            return null;
+        }
+        return clearance.reasonCode().authority();
+    }
+
+    private String reasonCode(MaritimeClearanceResult clearance) {
+        if (clearance.status() == ClearanceStatus.CLEARED || clearance.reasonCode() == null) {
+            return null;
+        }
+        return clearance.reasonCode().code();
     }
 
     @Transactional

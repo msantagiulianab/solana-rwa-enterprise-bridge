@@ -17,6 +17,7 @@ import java.util.UUID;
  * @param consigneeWallet  Solana base58 wallet of the consignee
  * @param clearanceStatus  maritime clearance / transit status
  * @param consignments     container consignments
+ * @param settlementId     linked canal-transit settlement (created on registration)
  */
 public record BillOfLadingResponse(
         UUID id,
@@ -27,5 +28,6 @@ public record BillOfLadingResponse(
         String destinationPort,
         String consigneeWallet,
         ClearanceStatus clearanceStatus,
-        List<ContainerConsignmentResponse> consignments) {
+        List<ContainerConsignmentResponse> consignments,
+        UUID settlementId) {
 }
