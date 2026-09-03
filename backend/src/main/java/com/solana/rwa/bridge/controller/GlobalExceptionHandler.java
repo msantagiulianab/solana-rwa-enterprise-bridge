@@ -3,6 +3,7 @@ package com.solana.rwa.bridge.controller;
 import com.solana.rwa.bridge.exception.AssetTokenNotFoundException;
 import com.solana.rwa.bridge.exception.InvestorNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.BillOfLadingNotFoundException;
+import com.solana.rwa.bridge.maritime.exception.CanalTransitSettlementNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.MaritimeComplianceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +27,7 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler({InvestorNotFoundException.class, AssetTokenNotFoundException.class,
-            BillOfLadingNotFoundException.class})
+            BillOfLadingNotFoundException.class, CanalTransitSettlementNotFoundException.class})
     public ResponseEntity<Map<String, Object>> handleNotFound(RuntimeException ex) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage());
     }

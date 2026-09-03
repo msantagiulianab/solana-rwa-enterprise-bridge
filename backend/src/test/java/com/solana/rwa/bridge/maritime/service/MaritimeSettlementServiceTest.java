@@ -8,7 +8,9 @@ import com.solana.rwa.bridge.maritime.domain.CanalTransitSettlement;
 import com.solana.rwa.bridge.maritime.domain.ClearanceStatus;
 import com.solana.rwa.bridge.maritime.domain.ContainerConsignment;
 import com.solana.rwa.bridge.maritime.domain.TransitSettlementStatus;
+import com.solana.rwa.bridge.maritime.dto.CanalTransitSettlementResponse;
 import com.solana.rwa.bridge.maritime.exception.BillOfLadingNotFoundException;
+import com.solana.rwa.bridge.maritime.exception.CanalTransitSettlementNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.MaritimeComplianceException;
 import com.solana.rwa.bridge.maritime.port.ClearanceReasonCode;
 import com.solana.rwa.bridge.maritime.port.MaritimeClearancePort;
@@ -33,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +54,7 @@ class MaritimeSettlementServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-09-01T12:00:00Z");
     private static final UUID BOL_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID SETTLEMENT_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
 
     @Mock
@@ -194,5 +198,76 @@ class MaritimeSettlementServiceTest {
         verify(finalityOutboxRepository, never()).save(any());
         verify(canalTransitSettlementRepository, never()).save(any());
     }
+
+    private CanalTransitSettlement clearedSettlement() {
+        BillOfLading bol = bol("IMO1234567", "MSC", WALLET, "CONT-001", "SEAL-001");
+        bol.setId(BOL_ID);
+        bol.setClearanceStatus(ClearanceStatus.CLEARED);
+
+        CanalTransitSettlement settlement = CanalTransitSettlement.builder()
+                .billOfLading(bol)
+                .transitBookingReference("TRANSIT-REF-001")
+                .transitFeeUsd(new BigDecimal("2500.00"))
+                .settlementTokenMint("MINT-ADDR")
+                .escrowAccount("ESCROW-ADDR")
+                .status(TransitSettlementStatus.CLEARED)
+                .build();
+        settlement.setId(SETTLEMENT_ID);
+        return settlement;
+    }
+
+    @Test
+    void executeSettlement_whenCleared_enqueuesOutboxAndReturnsResponse() {
+        CanalTransitSettlement settlement = clearedSettlement();
+        when(clock.instant()).thenReturn(NOW);
+        when(canalTransitSettlementRepository.findById(SETTLEMENT_ID)).thenReturn(Optional.of(settlement));
+        when(finalityOutboxRepository.save(any(FinalityOutboxEntry.class))).thenAnswer(inv -> {
+            FinalityOutboxEntry entry = inv.getArgument(0);
+            entry.setId(UUID.randomUUID());
+            return entry;
+        });
+        when(canalTransitSettlementRepository.save(any(CanalTransitSettlement.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CanalTransitSettlementResponse response = service.executeSettlement(SETTLEMENT_ID);
+
+        assertThat(response.id()).isEqualTo(SETTLEMENT_ID);
+        assertThat(response.billOfLadingId()).isEqualTo(BOL_ID);
+        assertThat(response.status()).isEqualTo(TransitSettlementStatus.SETTLED);
+        assertThat(response.finalityState()).isEqualTo(SettlementStatus.CONFIRMED);
+
+        ArgumentCaptor<FinalityOutboxEntry> outboxCaptor = ArgumentCaptor.forClass(FinalityOutboxEntry.class);
+        verify(finalityOutboxRepository, times(1)).save(outboxCaptor.capture());
+        assertThat(outboxCaptor.getValue().getStatus()).isEqualTo(SettlementStatus.CONFIRMED);
+        assertThat(outboxCaptor.getValue().getAssetTokenId()).isEqualTo(BOL_ID);
+        assertThat(outboxCaptor.getValue().getIdempotencyKey()).isNotBlank();
+    }
+
+    @Test
+    void executeSettlement_throwsNotFoundWhenMissing() {
+        when(canalTransitSettlementRepository.findById(SETTLEMENT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.executeSettlement(SETTLEMENT_ID))
+                .isInstanceOf(CanalTransitSettlementNotFoundException.class);
+
+        verify(finalityOutboxRepository, never()).save(any());
+        verify(canalTransitSettlementRepository, never()).save(any());
+    }
+
+    @Test
+    void executeSettlement_failsClosedOnNonCleared() {
+        CanalTransitSettlement settlement = clearedSettlement();
+        settlement.getBillOfLading().setClearanceStatus(ClearanceStatus.SANCTIONED);
+        when(canalTransitSettlementRepository.findById(SETTLEMENT_ID)).thenReturn(Optional.of(settlement));
+
+        assertThatThrownBy(() -> service.executeSettlement(SETTLEMENT_ID))
+                .isInstanceOf(MaritimeComplianceException.class)
+                .satisfies(ex -> assertThat(((MaritimeComplianceException) ex).getClearanceStatus())
+                        .isEqualTo(ClearanceStatus.SANCTIONED));
+
+        verify(finalityOutboxRepository, never()).save(any());
+        verify(canalTransitSettlementRepository, never()).save(any());
+    }
+
 }
 

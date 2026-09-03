@@ -909,3 +909,42 @@ validation, 200 evaluate/execute/reads, 422 sanctions fail-closed. Backend expan
 
 **Verification:** `backend/mvnw.cmd clean test` → **229 tests, 0 failures, 0 errors**.
 
+---
+
+## 2026-09-03
+
+### Task 3 Step 2: Finality Outbox Wiring (GREEN: 232 backend)
+
+**Plan:** Wire `MaritimeSettlementService.executeSettlement(UUID)` to fetch an
+existing `CanalTransitSettlement`, enforce the fail-closed clearance gate, enqueue
+a `CONFIRMED` `finality_outbox` row, and return a typed response.
+
+**Implementation:**
+- `executeSettlement` now loads the settlement via `CanalTransitSettlementRepository`
+  and throws a new `CanalTransitSettlementNotFoundException` (mapped to 404 in
+  `GlobalExceptionHandler`) when missing.
+- Clearance gate reads the linked `BillOfLading.clearanceStatus`; any non-`CLEARED`
+  status throws `MaritimeComplianceException` (mapped to 422) and produces no outbox
+  row and no settlement mutation.
+- On the CLEARED path it persists a `FinalityOutboxEntry` with a generated
+  `idempotencyKey` (`maritime-execute-<settlementId>`), `status = CONFIRMED`,
+  `commitmentLevel = CONFIRMED`, `nextPollAt = now`, and maps the underlying asset
+  to `assetTokenId` (the Bill of Lading id — the maritime asset equivalent), then
+  links it back via `CanalTransitSettlement.outboxEntryId` and marks the settlement
+  `SETTLED`.
+
+**Tests:** `MaritimeSettlementServiceTest` (5 → 8): happy-path enqueue/response,
+missing-settlement 404, and non-cleared 422 fail-closed. Backend expanded
+**229 → 232 tests** (175 unit + 57 integration).
+
+**Verification:** `backend/mvnw.cmd clean test` → **232 tests, 0 failures, 0 errors**.
+
+**Decisions:**
+- Added `CanalTransitSettlementNotFoundException` so `executeSettlement` maps a
+  missing row to 404 (never 500), consistent with `BillOfLadingNotFoundException`.
+- Maritime settlements have no tokenized `AssetToken`, so the outbox `assetTokenId`
+  carries the Bill of Lading id as the maritime asset identifier; the authoritative
+  settlement→outbox linkage remains `CanalTransitSettlement.outboxEntryId`.
+- Settlement transition to `SETTLED` + `outboxEntryId` is persisted in the same
+  `@Transactional` unit as the outbox enqueue for atomicity/auditability.
+

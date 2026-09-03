@@ -13,6 +13,7 @@ import com.solana.rwa.bridge.maritime.dto.ContainerConsignmentResponse;
 import com.solana.rwa.bridge.maritime.dto.RegisterBillOfLadingRequest;
 import com.solana.rwa.bridge.maritime.dto.SettlementEvaluationResponse;
 import com.solana.rwa.bridge.maritime.exception.BillOfLadingNotFoundException;
+import com.solana.rwa.bridge.maritime.exception.CanalTransitSettlementNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.MaritimeComplianceException;
 import com.solana.rwa.bridge.maritime.port.MaritimeClearancePort;
 import com.solana.rwa.bridge.maritime.port.MaritimeClearanceRequest;
@@ -138,8 +139,38 @@ public class MaritimeSettlementService {
         return new SettlementEvaluationResponse(settlementId, ClearanceStatus.CLEARED, null, null, null);
     }
 
+    @Transactional
     public CanalTransitSettlementResponse executeSettlement(UUID settlementId) {
-        return new CanalTransitSettlementResponse(settlementId, null, TransitSettlementStatus.SETTLED, null, SettlementStatus.CONFIRMED);
+        CanalTransitSettlement settlement = canalTransitSettlementRepository.findById(settlementId)
+                .orElseThrow(() -> new CanalTransitSettlementNotFoundException(settlementId));
+
+        BillOfLading bol = settlement.getBillOfLading();
+        ClearanceStatus clearanceStatus = bol != null ? bol.getClearanceStatus() : ClearanceStatus.PENDING;
+        if (clearanceStatus != ClearanceStatus.CLEARED) {
+            throw new MaritimeComplianceException(new MaritimeClearanceResult(
+                    clearanceStatus, null, null, null, clock.instant()));
+        }
+
+        Instant now = clock.instant();
+        FinalityOutboxEntry outbox = finalityOutboxRepository.save(FinalityOutboxEntry.builder()
+                .assetTokenId(bol != null ? bol.getId() : null)
+                .idempotencyKey("maritime-execute-" + settlementId)
+                .status(SettlementStatus.CONFIRMED)
+                .commitmentLevel(COMMITMENT_CONFIRMED)
+                .nextPollAt(now)
+                .build());
+
+        settlement.setStatus(TransitSettlementStatus.SETTLED);
+        settlement.setOutboxEntryId(outbox.getId());
+        settlement.setSettledAt(now);
+        canalTransitSettlementRepository.save(settlement);
+
+        return new CanalTransitSettlementResponse(
+                settlement.getId(),
+                bol != null ? bol.getId() : null,
+                settlement.getStatus(),
+                settlement.getTransactionSignature(),
+                SettlementStatus.CONFIRMED);
     }
 
     public CanalTransitSettlementResponse getSettlement(UUID settlementId) {
