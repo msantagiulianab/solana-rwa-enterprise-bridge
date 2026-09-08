@@ -358,6 +358,11 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 `allowedHeaders` is an explicit allowlist (`Origin`, `Content-Type`, `Accept`, `Authorization`, `X-API-Key`), and `X-API-Key` is registered as the mutating-route auth header.
 
+## Architectural Roadmap
+
+- **Week 2 Milestone (Completed):** Finality confirmation outbox worker daemon, fail-closed maritime clearance SPI, and end-to-end DvP simulation harness with 234 passing backend tests.
+- **Week 3 Scope (Active):** With the finality confirmation outbox and maritime clearance SPI verified, our next architectural phase introduces Token-2022 Transfer Hooks and Permanent Delegate extensions for automated on-chain regulatory compliance.
+
 ## Test Counts
 
 | Suite | Count |
