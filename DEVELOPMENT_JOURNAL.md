@@ -986,3 +986,61 @@ IMO9999999 → evaluate SANCTIONED → execute 422 → 0 outbox rows). Backend e
 - No Solana RPC call is made on the blocked path; the happy path only enqueues a
   durable outbox row for the existing scheduled finality worker.
 
+---
+
+## 2026-09-09
+
+### Week 3: Token-2022 Mint Migration, Transfer Hooks & Compliance SPI (GREEN: 244 backend)
+
+**Plan:** Migrate asset issuance from the legacy token program to Token-2022
+(`TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`), initialize the Permanent Delegate
+extension, and wire a fail-closed compliance SPI into the transfer hook execution
+path.
+
+**Token-2022 mint migration:** `SolanaMintService.createMint()` now allocates a
+202-byte extended mint (165 base + 1 account-type byte + 36-byte Permanent Delegate
+TLV) and emits five instructions: two compute-budget instructions,
+`SystemProgram.createAccount`, Token-2022 `InitializeMint` (same 35-byte layout as
+legacy), and Token-2022 `InitializePermanentDelegate` (discriminator 35 + 32-byte
+delegate). The Permanent Delegate is the enterprise fee-payer wallet. New
+`Token2022Program` centralizes the TLV account-size math and instruction
+discriminators; `Token2022InstructionBuilder` produces the wire-format instructions
+for `InitializeMint`, `InitializePermanentDelegate`, `InitializeTransferHook`
+(discriminator 36 + sub 0 + authority + program id), and `TransferChecked`
+(discriminator 12 + u64 amount + u8 decimals).
+
+**Transfer hook infrastructure:** `SolanaPdaUtil.findProgramAddress` mirrors
+`Pubkey.findProgramAddress` (SHA-256 over `seeds || bump || program_id ||
+"ProgramDerivedAddress"`, accepting the first off-curve candidate via the eddsa
+decompressor). `TokenTransferService` resolves the `extra-account-metas` PDA for
+the mint + hook program and appends it as the validation account on the
+`TransferChecked` instruction.
+
+**Compliance SPI binding:** New Hexagonal `TransferCompliancePort` SPI + pure-Java
+`TransferComplianceRequest`/`TransferComplianceResult`/`TransferComplianceStatus`
+records, backed by the deterministic `SimulatedTransferComplianceAdapter`
+(blocked on non-positive amount or a sanctioned destination). `TokenTransferService`
+evaluates the SPI before building/broadcasting; a `BLOCKED` decision throws the new
+`ComplianceViolationException` (mapped to 422) so no RPC bytes are ever emitted.
+
+**Tests:** `Token2022MintExtensionTest` (7) — canonical mint sizes (202/234/270),
+Permanent Delegate / Transfer Hook / TransferChecked data encoders, Token-2022
+program targeting, and PDA derivation (off-curve + deterministic + self-consistent).
+`TransferHookIT` (3) — compliant broadcast, fail-closed sanctioned destination
+(zero broadcasts), and validation-PDA account meta assembly. `SolanaMintServiceTest`
+updated to the five-instruction Token-2022 flow (202-byte mint, Token-2022 program,
+Permanent Delegate wire format). Backend expanded **234 → 244 tests**
+(182 unit + 62 integration).
+
+**Verification:** `backend/mvnw clean verify` → **244 tests, 0 failures, 0 errors**.
+
+**Decisions:**
+- Token-2022 optional authorities use `MaybeNull<Address>` (32 bytes, zero key =
+  `None`), so the Permanent Delegate value is 32 bytes and the Transfer Hook value
+  is 64 bytes — this drives the canonical 202/234/270 mint sizes.
+- The transfer hook program id is injected via `solana.transfer-hook.program-id`
+  (empty default; transfers fail fast with a clear config error if unset).
+- Compliance screens the owner wallets while the instruction transfers between
+  token accounts, keeping KYC/AML off-chain and the token accounts on-chain.
+
+

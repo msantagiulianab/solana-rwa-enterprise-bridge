@@ -53,6 +53,11 @@ solana:
     url: ${SOLANA_DEVNET_RPC_URL:https://api.devnet.solana.com}
     private-key: ${SOLANA_DEVNET_PRIVATE_KEY:}
     priority-fee-baseline-micro-lamports: ${SOLANA_PRIORITY_FEE_BASELINE:1000}
+  # Token-2022 transfer hook configuration. The hook program id must be a
+  # deployed SPL Transfer Hook program; it is resolved via the
+  # `extra-account-metas` PDA during compliance-gated secondary transfers.
+  transfer-hook:
+    program-id: ${SOLANA_TRANSFER_HOOK_PROGRAM_ID:}
   # Finality confirmation outbox worker. Max attempts is per-record
   # (finality_outbox.max_poll_attempts, column default 30); the values below
   # govern the poll cadence, backoff schedule, and RPC batch size.

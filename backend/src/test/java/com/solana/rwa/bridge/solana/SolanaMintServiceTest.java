@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Arrays;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +26,11 @@ import static org.mockito.Mockito.when;
  * Offline unit test for {@link SolanaMintService}. The {@link SolanaRpcAdapter}
  * is mocked so no live Devnet traffic occurs, while the real keypair service
  * and transaction serializer verify the full sign-and-submit pipeline locally.
+ *
+ * <p>Asset issuance targets the Token-2022 program and initializes the
+ * Permanent Delegate extension, so the transaction carries five instructions:
+ * two compute-budget instructions, {@code CreateAccount}, Token-2022
+ * {@code InitializeMint}, and Token-2022 {@code InitializePermanentDelegate}.
  */
 @ExtendWith(MockitoExtension.class)
 class SolanaMintServiceTest {
@@ -33,6 +39,7 @@ class SolanaMintServiceTest {
     private static final long MINT_RENT_EXEMPTION = 1_461_600L;
     private static final long PRIORITY_FEE = 5_000L;
     private static final int COMPUTE_UNIT_LIMIT = 10_000;
+    private static final int MINT_SPACE = SolanaMintService.TOKEN_2022_MINT_SPACE;
 
     @Mock
     private SolanaRpcAdapter rpcAdapter;
@@ -50,7 +57,7 @@ class SolanaMintServiceTest {
 
     @Test
     void createMint_returnsBase58MintAddressAndSubmitsSignedTransaction() {
-        when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getMinimumBalanceForRentExemption(MINT_SPACE)).thenReturn(MINT_RENT_EXEMPTION);
         when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
                 .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
@@ -64,15 +71,15 @@ class SolanaMintServiceTest {
                 .isNotBlank()
                 .matches("^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{32,44}$");
 
-        verify(rpcAdapter).getMinimumBalanceForRentExemption(82L);
+        verify(rpcAdapter).getMinimumBalanceForRentExemption(MINT_SPACE);
         verify(rpcAdapter).getRecentPrioritizationFees(ArgumentMatchers.anyList());
         verify(rpcAdapter).getLatestBlockhash();
         verify(rpcAdapter).sendTransaction(ArgumentMatchers.anyString());
     }
 
     @Test
-    void createMint_submitsAtomicFourInstructionWireFormat() {
-        when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+    void createMint_submitsAtomicFiveInstructionWireFormat() {
+        when(rpcAdapter.getMinimumBalanceForRentExemption(MINT_SPACE)).thenReturn(MINT_RENT_EXEMPTION);
         when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
                 .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
@@ -127,14 +134,14 @@ class SolanaMintServiceTest {
         assertThat(Base58Codec.encode(accountKeys[4]))
                 .isEqualTo(SolanaMintService.RENT_SYSVAR_ID);
         assertThat(Base58Codec.encode(accountKeys[5]))
-                .isEqualTo(SolanaMintService.TOKEN_PROGRAM_ID);
+                .isEqualTo(SolanaMintService.TOKEN_2022_PROGRAM_ID);
 
         // Recent blockhash (32 bytes).
         offset[0] += 32;
 
         // Instruction list: compact-u16 length prefix.
         int instructionCount = readCompactU16(transaction, offset);
-        assertThat(instructionCount).isEqualTo(4);
+        assertThat(instructionCount).isEqualTo(5);
 
         // Instruction 0: ComputeBudgetInstruction.setComputeUnitPrice.
         int programIndex0 = transaction[offset[0]++] & 0xFF;
@@ -182,15 +189,15 @@ class SolanaMintServiceTest {
         // u64 lamports = rent-exempt minimum (little-endian).
         assertThat(readU64(data2, 4)).isEqualTo(MINT_RENT_EXEMPTION);
         // u64 space = 82 bytes (little-endian).
-        assertThat(readU64(data2, 12)).isEqualTo(82L);
+        assertThat(readU64(data2, 12)).isEqualTo(MINT_SPACE);
         // Owner program id = SPL Token program.
         byte[] owner = new byte[32];
         System.arraycopy(data2, 20, owner, 0, 32);
-        assertThat(Base58Codec.encode(owner)).isEqualTo(SolanaMintService.TOKEN_PROGRAM_ID);
+        assertThat(Base58Codec.encode(owner)).isEqualTo(SolanaMintService.TOKEN_2022_PROGRAM_ID);
 
-        // Instruction 3: TokenProgram.initializeMint.
+        // Instruction 3: Token-2022 InitializeMint.
         int programIndex3 = transaction[offset[0]++] & 0xFF;
-        assertThat(programIndex3).isEqualTo(5); // token program
+        assertThat(programIndex3).isEqualTo(5); // Token-2022 program
 
         int accountsLen3 = readCompactU16(transaction, offset);
         assertThat(accountsLen3).isEqualTo(2);
@@ -205,14 +212,34 @@ class SolanaMintServiceTest {
 
         assertThat(data3[0] & 0xFF).isZero();          // InitializeMint discriminator
         assertThat(data3[1] & 0xFF).isEqualTo(6);      // decimals
+        byte[] mintAuthority = Arrays.copyOfRange(data3, 2, 34);
+        assertThat(Base58Codec.encode(mintAuthority)).isEqualTo(Base58Codec.encode(accountKeys[0]));
         assertThat(data3[data3.length - 1] & 0xFF).isZero(); // freeze authority COption::None
+
+        // Instruction 4: Token-2022 InitializePermanentDelegate.
+        int programIndex4 = transaction[offset[0]++] & 0xFF;
+        assertThat(programIndex4).isEqualTo(5); // Token-2022 program
+
+        int accountsLen4 = readCompactU16(transaction, offset);
+        assertThat(accountsLen4).isEqualTo(1);
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1); // mint -> 1
+
+        int dataLen4 = readCompactU16(transaction, offset);
+        assertThat(dataLen4).isEqualTo(33); // discriminator (1) + delegate (32)
+        byte[] data4 = new byte[dataLen4];
+        System.arraycopy(transaction, offset[0], data4, 0, dataLen4);
+        offset[0] += dataLen4;
+
+        assertThat(data4[0] & 0xFF).isEqualTo(35); // InitializePermanentDelegate discriminator
+        byte[] delegate = Arrays.copyOfRange(data4, 1, 33);
+        assertThat(Base58Codec.encode(delegate)).isEqualTo(Base58Codec.encode(accountKeys[0]));
     }
 
     @Test
     void createMint_usesRentExemptionFallbackWhenRpcReturnsDefaultValue() {
         // When the RPC layer is mocked absent, getMinimumBalanceForRentExemption
-        // returns its built-in fallback for an 82-byte mint account.
-        when(rpcAdapter.getMinimumBalanceForRentExemption(82L))
+        // returns its built-in fallback value.
+        when(rpcAdapter.getMinimumBalanceForRentExemption(MINT_SPACE))
                 .thenReturn(SolanaRpcAdapter.DEFAULT_MINT_RENT_EXEMPTION);
         when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
                 .thenReturn(PRIORITY_FEE);
@@ -234,7 +261,7 @@ class SolanaMintServiceTest {
 
     @Test
     void createMint_wrapsRpcFailureAsBadRequest() {
-        when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getMinimumBalanceForRentExemption(MINT_SPACE)).thenReturn(MINT_RENT_EXEMPTION);
         when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
                 .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
@@ -250,7 +277,7 @@ class SolanaMintServiceTest {
 
     @Test
     void createMint_retriesOnBlockhashNotFoundThenSucceeds() {
-        when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getMinimumBalanceForRentExemption(MINT_SPACE)).thenReturn(MINT_RENT_EXEMPTION);
         when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
                 .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())
@@ -273,7 +300,7 @@ class SolanaMintServiceTest {
 
     @Test
     void createMint_exhaustsRetriesAfterThreeBlockhashNotFoundFailures() {
-        when(rpcAdapter.getMinimumBalanceForRentExemption(82L)).thenReturn(MINT_RENT_EXEMPTION);
+        when(rpcAdapter.getMinimumBalanceForRentExemption(MINT_SPACE)).thenReturn(MINT_RENT_EXEMPTION);
         when(rpcAdapter.getRecentPrioritizationFees(ArgumentMatchers.anyList()))
                 .thenReturn(PRIORITY_FEE);
         when(rpcAdapter.getLatestBlockhash())

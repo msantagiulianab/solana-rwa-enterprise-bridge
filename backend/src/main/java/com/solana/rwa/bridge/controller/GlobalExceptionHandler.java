@@ -1,6 +1,7 @@
 package com.solana.rwa.bridge.controller;
 
 import com.solana.rwa.bridge.exception.AssetTokenNotFoundException;
+import com.solana.rwa.bridge.exception.ComplianceViolationException;
 import com.solana.rwa.bridge.exception.InvestorNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.BillOfLadingNotFoundException;
 import com.solana.rwa.bridge.maritime.exception.CanalTransitSettlementNotFoundException;
@@ -34,6 +35,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaritimeComplianceException.class)
     public ResponseEntity<Map<String, Object>> handleMaritimeCompliance(MaritimeComplianceException ex) {
+        return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+    }
+
+    @ExceptionHandler(ComplianceViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleComplianceViolation(ComplianceViolationException ex) {
         return build(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 

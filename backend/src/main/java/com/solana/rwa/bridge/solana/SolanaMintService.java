@@ -12,20 +12,33 @@ import java.io.ByteArrayOutputStream;
 import java.util.List;
 
 /**
- * Issues the on-chain SPL Token "InitializeMint" instruction on Solana Devnet.
+ * Issues a Token-2022 {@code InitializeMint} transaction with the Permanent
+ * Delegate extension on Solana Devnet.
  *
- * <p>Generates a fresh mint account keypair, compiles and signs the transaction,
- * then submits it through the {@link SolanaRpcAdapter}. The resulting base58
- * mint address is returned for persistence against the asset.
+ * <p>Generates a fresh mint account keypair, allocates the extended Token-2022
+ * mint (base state + account type + Permanent Delegate TLV), compiles and signs
+ * the transaction, then submits it through the {@link SolanaRpcAdapter}. The
+ * resulting base58 mint address is returned for persistence against the asset.
+ * The Permanent Delegate is set to the enterprise fee-payer wallet, granting
+ * regulatory oversight, asset recovery and compliance freeze authority.
  */
 @Slf4j
 @Service
 public class SolanaMintService {
 
     /**
-     * SPL Token program id (the standard token program on all clusters).
+     * Legacy SPL Token program id. Retained for wire-format tests and legacy
+     * tooling; asset issuance now targets {@link #TOKEN_2022_PROGRAM_ID}.
+     *
+     * @deprecated Token-2022 supersedes the legacy token program.
      */
+    @Deprecated
     public static final String TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+    /**
+     * Token-2022 program id — the target for all asset issuance.
+     */
+    public static final String TOKEN_2022_PROGRAM_ID = Token2022Program.TOKEN_2022_PROGRAM_ID;
 
     /**
      * System program id, required by the CreateAccount instruction.
@@ -42,13 +55,13 @@ public class SolanaMintService {
      */
     public static final int RWA_TOKEN_DECIMALS = 6;
 
-    private static final int INITIALIZE_MINT_DISCRIMINATOR = 0;
     private static final int CREATE_ACCOUNT_DISCRIMINATOR = 0;
 
     /**
-     * Space (bytes) required by a standard SPL Token Mint account.
+     * Space (bytes) required by a Token-2022 mint carrying the Permanent
+     * Delegate extension (165 base + 1 account type + 36 TLV entry).
      */
-    public static final int SPL_MINT_SPACE = 82;
+    public static final int TOKEN_2022_MINT_SPACE = Token2022Program.permanentDelegateMintSize();
 
     /**
      * Explicit compute-unit cap for the mint transaction.
@@ -68,7 +81,8 @@ public class SolanaMintService {
     }
 
     /**
-     * Creates an SPL Token mint account on Solana Devnet.
+     * Creates a Token-2022 mint account carrying the Permanent Delegate
+     * extension on Solana Devnet.
      *
      * @return base58 mint address of the newly created token mint
      * @throws SolanaRpcException when the Devnet RPC layer fails
@@ -80,9 +94,9 @@ public class SolanaMintService {
 
             byte[] mintPubkey = mint.getPublicKeyBytes();
             byte[] payerPubkey = payer.getPublicKeyBytes();
-            byte[] tokenProgram = Base58Codec.decode(TOKEN_PROGRAM_ID);
+            byte[] tokenProgram = Token2022InstructionBuilder.programId();
 
-            long rentExemption = rpcAdapter.getMinimumBalanceForRentExemption(SPL_MINT_SPACE);
+            long rentExemption = rpcAdapter.getMinimumBalanceForRentExemption(TOKEN_2022_MINT_SPACE);
 
             // Price the transaction dynamically from the node's recent fee samples.
             // Both the fee payer and the freshly-generated mint account are passed
@@ -102,28 +116,30 @@ public class SolanaMintService {
                     ComputeBudgetInstruction.setComputeUnitLimit(DEFAULT_COMPUTE_UNIT_LIMIT);
 
             // Instruction 2: SystemProgram.createAccount — allocate+assign the
-            // rent-exempt mint account owned by the SPL Token program.
+            // rent-exempt extended mint account owned by the Token-2022 program.
             SolanaInstruction createAccount = new SolanaInstruction(
                     Base58Codec.decode(SYSTEM_PROGRAM_ID),
                     List.of(
                             new AccountMeta(payerPubkey, true, true),
                             new AccountMeta(mintPubkey, true, true)),
-                    buildCreateAccountData(rentExemption, tokenProgram));
+                    buildCreateAccountData(rentExemption, TOKEN_2022_MINT_SPACE, tokenProgram));
 
-            // Instruction 3: TokenProgram.initializeMint — initialize the freshly
-            // created account as an SPL Token mint.
-            SolanaInstruction initializeMint = new SolanaInstruction(
-                    tokenProgram,
-                    List.of(
-                            new AccountMeta(mintPubkey, true, true),
-                            new AccountMeta(Base58Codec.decode(RENT_SYSVAR_ID), false, false)),
-                    buildInitializeMintData(RWA_TOKEN_DECIMALS, payerPubkey, false));
+            // Instruction 3: Token-2022 InitializeMint — initialize the freshly
+            // created account as a Token-2022 mint (same wire layout as legacy).
+            SolanaInstruction initializeMint = Token2022InstructionBuilder.initializeMint(
+                    mintPubkey, RWA_TOKEN_DECIMALS, payerPubkey, null);
+
+            // Instruction 4: Token-2022 InitializePermanentDelegate — attach the
+            // enterprise oversight wallet as the mint-level permanent delegate.
+            SolanaInstruction initializePermanentDelegate =
+                    Token2022InstructionBuilder.initializePermanentDelegate(mintPubkey, payerPubkey);
 
             return submitWithBlockhashRetry(
-                    List.of(setComputeUnitPrice, setComputeUnitLimit, createAccount, initializeMint),
+                    List.of(setComputeUnitPrice, setComputeUnitLimit, createAccount,
+                            initializeMint, initializePermanentDelegate),
                     List.of(payer, mint), mint.getPublicKeyBase58());
         } catch (Exception ex) {
-            log.error("Failed to create SPL Token mint on Devnet", ex);
+            log.error("Failed to create Token-2022 mint on Devnet", ex);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Solana Devnet Mint Error: " + ex.getMessage(), ex);
         }
@@ -160,7 +176,7 @@ public class SolanaMintService {
                 throw ex;
             }
         }
-        log.error("Exhausted blockhash retries while creating SPL Token mint", lastBlockhashFailure);
+        log.error("Exhausted blockhash retries while creating Token-2022 mint", lastBlockhashFailure);
         throw lastBlockhashFailure;
     }
 
@@ -169,14 +185,14 @@ public class SolanaMintService {
         return message != null && message.toLowerCase().contains("blockhash not found");
     }
 
-    private byte[] buildCreateAccountData(long lamports, byte[] ownerProgramId) {
+    private byte[] buildCreateAccountData(long lamports, long space, byte[] ownerProgramId) {
         ByteArrayOutputStream data = new ByteArrayOutputStream();
         data.write(CREATE_ACCOUNT_DISCRIMINATOR); // u32 (4 bytes) little-endian
         data.write(0);
         data.write(0);
         data.write(0);
         writeU64(data, lamports);   // u64 lamports
-        writeU64(data, SPL_MINT_SPACE); // u64 space
+        writeU64(data, space);      // u64 space
         data.writeBytes(ownerProgramId); // [32]byte owner
         return data.toByteArray();
     }
@@ -186,18 +202,5 @@ public class SolanaMintService {
             out.write((int) (value & 0xFF));
             value >>= 8;
         }
-    }
-
-    private byte[] buildInitializeMintData(int decimals, byte[] mintAuthority, boolean freezeAuthoritySet) {
-        ByteArrayOutputStream data = new ByteArrayOutputStream();
-        data.write(INITIALIZE_MINT_DISCRIMINATOR);
-        data.write(decimals & 0xFF);
-        data.writeBytes(mintAuthority);
-        // COption<Pubkey>: 0 = None, 1 = Some followed by 32-byte authority.
-        data.write(freezeAuthoritySet ? 1 : 0);
-        if (freezeAuthoritySet) {
-            data.writeBytes(mintAuthority);
-        }
-        return data.toByteArray();
     }
 }
