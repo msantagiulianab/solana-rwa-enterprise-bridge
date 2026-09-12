@@ -1183,4 +1183,58 @@ repository, Hexagonal SPI integration in `TokenTransferService`, and the
 end-to-end integration verification. Week 3 compliance audit persistence is
 **complete**.
 
+---
+
+### Permanent Delegate Clawback Execution — Deliverable 1 Core Service (GREEN: 259 backend)
+
+**Plan:** Build `TokenClawbackService` so a compliance officer can execute an
+immediate Token-2022 asset recovery: assemble a `TransferChecked` instruction
+signed by the Permanent Delegate (the enterprise fee-payer from
+`SolanaKeypairService`), append the transfer-hook `extra-account-metas`
+validation PDA, broadcast via `SolanaRpcAdapter.sendTransaction` (with
+stale-blockhash retry), and record an immutable `AuditLog` entry with
+`action = CLAWBACK`.
+
+**Implementation:**
+- `TokenClawbackService` (constructor-injected) accepts `ClawbackRequest` and
+  returns `ClawbackResult`. `buildTransferChecked` decodes the mint / source /
+  destination base58 keys, resolves the signing authority from
+  `keypairService.resolveKeypair()` (the Permanent Delegate, never the source
+  owner), derives the `extra-account-metas` PDA via `SolanaPdaUtil`, and emits a
+  Token-2022 `TransferChecked` instruction with the delegate as the sole signer.
+- `clawback` submits through the same 3-attempt blockhash retry loop used by
+  `TokenTransferService`, then persists an `AuditLog` (action `CLAWBACK`, status
+  `APPROVED`, reason, source token account as wallet address, mint as asset id,
+  a server-generated UUID idempotency key, and the broadcast signature).
+- New `ClawbackRequest` / `ClawbackResult` records in the `dto` package; the REST
+  controller/DTO layer (Deliverable 2) will thread the client idempotency key and
+  `X-API-Key` gating.
+
+**Tests (TDD):** New pure-Mockito `TokenClawbackServiceTest` (3):
+- `buildTransferChecked_assemblesInstructionWithPermanentDelegateAuthority`
+  asserts Token-2022 program targeting, the 4 base accounts + 1 hook validation
+  PDA with correct signer/writable flags, the delegate as the signing authority
+  (never the source owner), and the `TransferChecked` wire payload (discriminator
+  12 + little-endian amount + decimals).
+- `clawback_broadcastsAndPersistsClawbackAuditLog` asserts the serializer is
+  handed a single-signer list containing only the delegate keypair,
+  `sendTransaction` is invoked, and the persisted `AuditLog` carries
+  `CLAWBACK`/`APPROVED`, the reason, source/destination metadata, a non-blank
+  idempotency key, and the broadcast signature.
+- `clawback_retriesWhenBlockhashIsStale` proves the retry loop re-fetches the
+  blockhash and re-broadcasts once before returning on the second attempt.
+
+**Verification:** `backend/mvnw test -Dtest=TokenClawbackServiceTest` → 3 tests,
+0 failures, 0 errors; full `backend/mvnw test` → **259 tests, 0 failures, 0 errors**
+(187 unit + 72 integration).
+
+**Decisions:**
+- The clawback reuses the existing `Token2022InstructionBuilder.transferChecked`
+  and `SolanaPdaUtil` transfer-hook PDA derivation, so clawback and secondary
+  transfer share identical on-chain wire semantics.
+- The audit write happens after a successful broadcast (append-only ledger with
+  the real on-chain signature); RPC failures propagate as `SolanaRpcException`
+  after the retry budget is exhausted, mirroring `TokenTransferService`.
+
+
 
