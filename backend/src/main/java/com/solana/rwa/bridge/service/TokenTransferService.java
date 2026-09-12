@@ -1,13 +1,17 @@
 package com.solana.rwa.bridge.service;
 
 import com.solana.rwa.bridge.compliance.port.TransferCompliancePort;
+import com.solana.rwa.bridge.compliance.port.TransferComplianceReason;
 import com.solana.rwa.bridge.compliance.port.TransferComplianceRequest;
 import com.solana.rwa.bridge.compliance.port.TransferComplianceResult;
 import com.solana.rwa.bridge.compliance.port.TransferComplianceStatus;
 import com.solana.rwa.bridge.dto.TokenTransferRequest;
 import com.solana.rwa.bridge.dto.TokenTransferResult;
+import com.solana.rwa.bridge.entity.TransferHookAuditLog;
+import com.solana.rwa.bridge.entity.TransferHookAuditStatus;
 import com.solana.rwa.bridge.exception.ComplianceViolationException;
 import com.solana.rwa.bridge.exception.SolanaRpcException;
+import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
 import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
 import com.solana.rwa.bridge.solana.AccountMeta;
@@ -31,12 +35,16 @@ import java.util.List;
  * <p>The transfer hook execution path is fail-closed end-to-end:
  * <ol>
  *   <li>Evaluate the transfer against the {@link TransferCompliancePort} SPI.
- *       A {@link TransferComplianceStatus#BLOCKED} decision aborts with
+ *       Every decision — {@code CLEARED} or {@code BLOCKED} — is persisted
+ *       immutably to {@link TransferHookAuditLog}. A
+ *       {@link TransferComplianceStatus#BLOCKED} decision is recorded with a
+ *       {@code null} transaction signature and aborts with
  *       {@link ComplianceViolationException} before any RPC bytes are emitted.</li>
  *   <li>Resolve the transfer hook {@code extra-account-metas} PDA and append it
  *       to the {@code TransferChecked} instruction so the validator runtime can
  *       CPI into the hook program during settlement.</li>
- *   <li>Serialize, sign and broadcast (with stale-blockhash retry).</li>
+ *   <li>Serialize, sign and broadcast (with stale-blockhash retry), then record
+ *       the broadcast signature on the persisted audit log.</li>
  * </ol>
  */
 @Slf4j
@@ -49,17 +57,20 @@ public class TokenTransferService {
     private final SolanaRpcAdapter rpcAdapter;
     private final SolanaKeypairService keypairService;
     private final SolanaTransactionSerializer transactionSerializer;
+    private final TransferHookAuditLogRepository transferHookAuditLogRepository;
     private final String transferHookProgramId;
 
     public TokenTransferService(TransferCompliancePort transferCompliancePort,
                                 SolanaRpcAdapter rpcAdapter,
                                 SolanaKeypairService keypairService,
                                 SolanaTransactionSerializer transactionSerializer,
+                                TransferHookAuditLogRepository transferHookAuditLogRepository,
                                 @Value("${solana.transfer-hook.program-id:}") String transferHookProgramId) {
         this.transferCompliancePort = transferCompliancePort;
         this.rpcAdapter = rpcAdapter;
         this.keypairService = keypairService;
         this.transactionSerializer = transactionSerializer;
+        this.transferHookAuditLogRepository = transferHookAuditLogRepository;
         this.transferHookProgramId = transferHookProgramId;
     }
 
@@ -78,6 +89,10 @@ public class TokenTransferService {
                         request.amount()));
 
         if (compliance.status() == TransferComplianceStatus.BLOCKED) {
+            // Fail-closed: record the blocked decision immutably (with a null
+            // transaction signature — no broadcast occurred) and abort before
+            // any RPC bytes are emitted.
+            transferHookAuditLogRepository.save(toAuditLog(request, compliance, null));
             log.warn("Transfer blocked by compliance SPI: {} ({})",
                     compliance.reason() == null ? "UNKNOWN" : compliance.reason().code(),
                     compliance.referenceId());
@@ -87,6 +102,8 @@ public class TokenTransferService {
         SolanaInstruction transfer = buildTransferChecked(request);
         SolanaKeypair authority = keypairService.resolveKeypair();
         String signature = submitWithBlockhashRetry(List.of(transfer), List.of(authority));
+
+        transferHookAuditLogRepository.save(toAuditLog(request, compliance, signature));
 
         return new TokenTransferResult(signature, compliance.status().name(),
                 compliance.referenceId(), compliance.evaluatedAt());
@@ -111,6 +128,36 @@ public class TokenTransferService {
         return Token2022InstructionBuilder.transferChecked(
                 source, mint, destination, authority, request.amount(), decimals,
                 List.of(new AccountMeta(validationAddress, false, false)));
+    }
+
+    private TransferHookAuditLog toAuditLog(TokenTransferRequest request,
+                                            TransferComplianceResult compliance,
+                                            String transactionSignature) {
+        return TransferHookAuditLog.builder()
+                .transactionSignature(transactionSignature)
+                .mintAddress(request.assetMintAddress())
+                .sourceWallet(request.sourceWallet())
+                .destinationWallet(request.destinationWallet())
+                .amount(request.amount())
+                .complianceStatus(toAuditStatus(compliance.status()))
+                .reasonCode(toReasonCode(compliance.reason()))
+                .createdAt(compliance.evaluatedAt())
+                .build();
+    }
+
+    private TransferHookAuditStatus toAuditStatus(TransferComplianceStatus status) {
+        return status == TransferComplianceStatus.BLOCKED
+                ? TransferHookAuditStatus.BLOCKED
+                : TransferHookAuditStatus.CLEARED;
+    }
+
+    private String toReasonCode(TransferComplianceReason reason) {
+        if (reason == null) {
+            return null;
+        }
+        String authority = reason.authority() == null ? "" : reason.authority();
+        String code = reason.code() == null ? "UNKNOWN" : reason.code();
+        return authority.isBlank() ? code : authority + ":" + code;
     }
 
     private String requireTransferHookProgramId() {

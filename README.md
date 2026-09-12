@@ -367,13 +367,13 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 | Suite | Count |
 |-------|-------|
-| Backend unit tests (`*Test.java`) | 182 |
+| Backend unit tests (`*Test.java`) | 184 |
 | Backend integration tests (`*IT.java`) | 72 |
 | Frontend specs | 47 |
 
-**Backend total: 254 passing tests** (182 unit + 72 integration).
+**Backend total: 256 passing tests** (184 unit + 72 integration).
 
-**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `ComputeBudgetInstructionTest` (7) · `Token2022MintExtensionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (8) · `MaritimeSettlementControllerTest` (9)
+**Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `TokenTransferServiceTest` (2) · `ComputeBudgetInstructionTest` (7) · `Token2022MintExtensionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (8) · `MaritimeSettlementControllerTest` (9)
 
 **Breakdown (integration):** `ComplianceControllerIT` (10) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (7) · `AssetTokenRepositoryIT` (8) · `AuditLogRepositoryIT` (7) · `TransferHookIT` (3) · `TransferHookAuditLogRepositoryIT` (10) · `FinalityOutboxRepositoryIT` (2) · `MaritimeRepositoryIT` (5) · `MaritimeSettlementE2EIT` (2)
 

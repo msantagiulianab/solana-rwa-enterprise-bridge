@@ -1096,3 +1096,48 @@ only change to the count.
   `TokenTransferService` before returning `TransferComplianceResult`) is deferred
   to the next deliverable; this step only lands the persistence substrate.
 
+---
+
+### Week 3 Follow-up: Hexagonal SPI Integration (Deliverable 3) (GREEN: 256 backend)
+
+**Plan:** Wire `TransferHookAuditLogRepository` into the fail-closed
+`TokenTransferService` transfer path so every transfer-hook compliance decision
+is durably persisted — a `BLOCKED` decision is recorded with a `null`
+transaction signature and aborts with `ComplianceViolationException` (HTTP 422)
+before any Solana RPC bytes are emitted.
+
+**Implementation:**
+- `TokenTransferService` now takes `TransferHookAuditLogRepository` as a
+  constructor dependency. On a `BLOCKED` decision it saves the audit log (null
+  signature) and immediately throws `ComplianceViolationException`; on an
+  `APPROVED` decision it broadcasts, then saves the audit log with the returned
+  transaction signature before returning `TokenTransferResult`.
+- Added private mappers: `TransferComplianceStatus.APPROVED` →
+  `TransferHookAuditStatus.CLEARED` (and `BLOCKED` → `BLOCKED`), and the reason
+  code is persisted as `authority:code` (e.g. `COMPLIANCE:SANCTIONED_DESTINATION`).
+  `created_at` is seeded from `TransferComplianceResult.evaluatedAt()`.
+
+**Tests (TDD):** New pure-Mockito `TokenTransferServiceTest` (2) —
+`transfer_clearedPersistsAuditLogWithSignatureAndBroadcasts` asserts the saved
+audit log carries the broadcast signature, `CLEARED` status, and the request
+wallet/amount metadata, while `sendTransaction` is invoked;
+`transfer_blockedPersistsAuditLogWithNullSignatureAndThrowsWithoutBroadcast`
+asserts the saved audit log has a `null` signature and `BLOCKED` status, the
+transfer throws `ComplianceViolationException` containing `SANCTIONED_DESTINATION`,
+and `verifyNoInteractions(solanaRpcAdapter)` proves the fail-closed path never
+touches the RPC adapter.
+
+**Verification:** `backend/mvnw test -Dtest=*Test` → 184 unit tests, 0 failures,
+0 errors; full `backend/mvnw test` → **256 tests, 0 failures, 0 errors**
+(184 unit + 72 integration). `TransferHookIT` (3) still passes unchanged via
+Spring autowiring of the new repository bean.
+
+**Decisions:**
+- The audit write for a blocked decision happens *before* the exception is
+  thrown, guaranteeing the immutable ledger always records the fail-closed
+  outcome even though no broadcast ever occurs.
+- The cleared-path audit write happens *after* broadcast so the persisted
+  transaction signature is the real on-chain signature; the ledger stays
+  append-only (no update of a pre-broadcast null signature).
+
+
