@@ -124,19 +124,24 @@ public class SolanaMintService {
                             new AccountMeta(mintPubkey, true, true)),
                     buildCreateAccountData(rentExemption, TOKEN_2022_MINT_SPACE, tokenProgram));
 
-            // Instruction 3: Token-2022 InitializeMint — initialize the freshly
-            // created account as a Token-2022 mint (same wire layout as legacy).
-            SolanaInstruction initializeMint = Token2022InstructionBuilder.initializeMint(
-                    mintPubkey, RWA_TOKEN_DECIMALS, payerPubkey, null);
-
-            // Instruction 4: Token-2022 InitializePermanentDelegate — attach the
+            // Instruction 3: Token-2022 InitializePermanentDelegate — attach the
             // enterprise oversight wallet as the mint-level permanent delegate.
+            // Token-2022 requires extension initializers to run against the
+            // uninitialized mint BEFORE InitializeMint, so the delegate TLV entry
+            // is written first.
             SolanaInstruction initializePermanentDelegate =
                     Token2022InstructionBuilder.initializePermanentDelegate(mintPubkey, payerPubkey);
 
+            // Instruction 4: Token-2022 InitializeMint — initialize the freshly
+            // created account as a Token-2022 mint (same wire layout as legacy).
+            // Runs last because Token-2022 rejects InitializeMint while a required
+            // extension (e.g. Permanent Delegate) is still uninitialized.
+            SolanaInstruction initializeMint = Token2022InstructionBuilder.initializeMint(
+                    mintPubkey, RWA_TOKEN_DECIMALS, payerPubkey, null);
+
             return submitWithBlockhashRetry(
                     List.of(setComputeUnitPrice, setComputeUnitLimit, createAccount,
-                            initializeMint, initializePermanentDelegate),
+                            initializePermanentDelegate, initializeMint),
                     List.of(payer, mint), mint.getPublicKeyBase58());
         } catch (Exception ex) {
             log.error("Failed to create Token-2022 mint on Devnet", ex);

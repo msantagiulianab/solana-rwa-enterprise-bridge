@@ -30,7 +30,8 @@ import static org.mockito.Mockito.when;
  * <p>Asset issuance targets the Token-2022 program and initializes the
  * Permanent Delegate extension, so the transaction carries five instructions:
  * two compute-budget instructions, {@code CreateAccount}, Token-2022
- * {@code InitializeMint}, and Token-2022 {@code InitializePermanentDelegate}.
+ * {@code InitializePermanentDelegate}, and Token-2022 {@code InitializeMint}
+ * (extensions must be initialized before the mint base state).
  */
 @ExtendWith(MockitoExtension.class)
 class SolanaMintServiceTest {
@@ -132,9 +133,9 @@ class SolanaMintServiceTest {
         assertThat(Base58Codec.encode(accountKeys[3]))
                 .isEqualTo(SolanaMintService.SYSTEM_PROGRAM_ID);
         assertThat(Base58Codec.encode(accountKeys[4]))
-                .isEqualTo(SolanaMintService.RENT_SYSVAR_ID);
-        assertThat(Base58Codec.encode(accountKeys[5]))
                 .isEqualTo(SolanaMintService.TOKEN_2022_PROGRAM_ID);
+        assertThat(Base58Codec.encode(accountKeys[5]))
+                .isEqualTo(SolanaMintService.RENT_SYSVAR_ID);
 
         // Recent blockhash (32 bytes).
         offset[0] += 32;
@@ -195,44 +196,44 @@ class SolanaMintServiceTest {
         System.arraycopy(data2, 20, owner, 0, 32);
         assertThat(Base58Codec.encode(owner)).isEqualTo(SolanaMintService.TOKEN_2022_PROGRAM_ID);
 
-        // Instruction 3: Token-2022 InitializeMint.
+        // Instruction 3: Token-2022 InitializePermanentDelegate.
         int programIndex3 = transaction[offset[0]++] & 0xFF;
-        assertThat(programIndex3).isEqualTo(5); // Token-2022 program
+        assertThat(programIndex3).isEqualTo(4); // Token-2022 program
 
         int accountsLen3 = readCompactU16(transaction, offset);
-        assertThat(accountsLen3).isEqualTo(2);
-        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);      // mint       -> 1
-        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(4);      // rent sysvar -> 4
+        assertThat(accountsLen3).isEqualTo(1);
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1); // mint -> 1
 
         int dataLen3 = readCompactU16(transaction, offset);
-        assertThat(dataLen3).isEqualTo(35); // discriminator (1) + decimals (1) + authority (32) + COption (1)
+        assertThat(dataLen3).isEqualTo(33); // discriminator (1) + delegate (32)
         byte[] data3 = new byte[dataLen3];
         System.arraycopy(transaction, offset[0], data3, 0, dataLen3);
         offset[0] += dataLen3;
 
-        assertThat(data3[0] & 0xFF).isZero();          // InitializeMint discriminator
-        assertThat(data3[1] & 0xFF).isEqualTo(6);      // decimals
-        byte[] mintAuthority = Arrays.copyOfRange(data3, 2, 34);
-        assertThat(Base58Codec.encode(mintAuthority)).isEqualTo(Base58Codec.encode(accountKeys[0]));
-        assertThat(data3[data3.length - 1] & 0xFF).isZero(); // freeze authority COption::None
+        assertThat(data3[0] & 0xFF).isEqualTo(35); // InitializePermanentDelegate discriminator
+        byte[] delegate = Arrays.copyOfRange(data3, 1, 33);
+        assertThat(Base58Codec.encode(delegate)).isEqualTo(Base58Codec.encode(accountKeys[0]));
 
-        // Instruction 4: Token-2022 InitializePermanentDelegate.
+        // Instruction 4: Token-2022 InitializeMint.
         int programIndex4 = transaction[offset[0]++] & 0xFF;
-        assertThat(programIndex4).isEqualTo(5); // Token-2022 program
+        assertThat(programIndex4).isEqualTo(4); // Token-2022 program
 
         int accountsLen4 = readCompactU16(transaction, offset);
-        assertThat(accountsLen4).isEqualTo(1);
-        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1); // mint -> 1
+        assertThat(accountsLen4).isEqualTo(2);
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(1);      // mint       -> 1
+        assertThat(transaction[offset[0]++] & 0xFF).isEqualTo(5);      // rent sysvar -> 5
 
         int dataLen4 = readCompactU16(transaction, offset);
-        assertThat(dataLen4).isEqualTo(33); // discriminator (1) + delegate (32)
+        assertThat(dataLen4).isEqualTo(35); // discriminator (1) + decimals (1) + authority (32) + COption (1)
         byte[] data4 = new byte[dataLen4];
         System.arraycopy(transaction, offset[0], data4, 0, dataLen4);
         offset[0] += dataLen4;
 
-        assertThat(data4[0] & 0xFF).isEqualTo(35); // InitializePermanentDelegate discriminator
-        byte[] delegate = Arrays.copyOfRange(data4, 1, 33);
-        assertThat(Base58Codec.encode(delegate)).isEqualTo(Base58Codec.encode(accountKeys[0]));
+        assertThat(data4[0] & 0xFF).isZero();          // InitializeMint discriminator
+        assertThat(data4[1] & 0xFF).isEqualTo(6);      // decimals
+        byte[] mintAuthority = Arrays.copyOfRange(data4, 2, 34);
+        assertThat(Base58Codec.encode(mintAuthority)).isEqualTo(Base58Codec.encode(accountKeys[0]));
+        assertThat(data4[data4.length - 1] & 0xFF).isZero(); // freeze authority COption::None
     }
 
     @Test

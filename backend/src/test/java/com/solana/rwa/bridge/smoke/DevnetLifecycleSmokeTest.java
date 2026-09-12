@@ -9,6 +9,7 @@ import com.solana.rwa.bridge.entity.KycStatus;
 import com.solana.rwa.bridge.entity.SettlementStatus;
 import com.solana.rwa.bridge.entity.TransferHookAuditLog;
 import com.solana.rwa.bridge.entity.TransferHookAuditStatus;
+import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.repository.AssetTokenRepository;
 import com.solana.rwa.bridge.repository.InvestorRepository;
 import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
@@ -78,9 +79,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @TestPropertySource(properties = "solana.transfer-hook.program-id="
         + Token2022Program.TOKEN_2022_PROGRAM_ID)
 class DevnetLifecycleSmokeTest {
-
-    private static final String ASSOCIATED_TOKEN_PROGRAM_ID =
-            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 
     private static final int MINT_TO_DISCRIMINATOR = 7;
     private static final int ATA_CREATE_DISCRIMINATOR = 0;
@@ -158,23 +156,21 @@ class DevnetLifecycleSmokeTest {
         // Step 3: stage the transfer prerequisites on Devnet (associated token
         // accounts + minted supply) so the compliant TransferChecked can settle.
         byte[] mint = Base58Codec.decode(mintAddress);
-        byte[] tokenProgram = Base58Codec.decode(Token2022Program.TOKEN_2022_PROGRAM_ID);
-        byte[] ataProgram = Base58Codec.decode(ASSOCIATED_TOKEN_PROGRAM_ID);
         byte[] payerPubkey = payer.getPublicKeyBytes();
         byte[] recipientPubkey = recipient.getPublicKeyBytes();
 
-        String sourceAta = associatedTokenAddress(payerPubkey, mint, ataProgram);
-        String destinationAta = associatedTokenAddress(recipientPubkey, mint, ataProgram);
+        String sourceAta = associatedTokenAddress(payerPubkey, mint);
+        String destinationAta = associatedTokenAddress(recipientPubkey, mint);
 
         submit(List.of(
                         createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(sourceAta),
-                                payerPubkey, mint, ataProgram, tokenProgram),
+                                payerPubkey, mint),
                         createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(destinationAta),
-                                recipientPubkey, mint, ataProgram, tokenProgram)),
+                                recipientPubkey, mint)),
                 List.of(payer));
 
         submit(List.of(buildMintTo(mint, Base58Codec.decode(sourceAta), payerPubkey,
-                        MINTED_SUPPLY, tokenProgram)),
+                        MINTED_SUPPLY)),
                 List.of(payer));
 
         TokenAccountBalance sourceBalance = awaitTokenBalance(sourceAta);
@@ -221,32 +217,45 @@ class DevnetLifecycleSmokeTest {
     // On-chain staging helpers (associated token account creation + mint-to)
     // ---------------------------------------------------------------------
 
-    private String associatedTokenAddress(byte[] owner, byte[] mint, byte[] ataProgram) {
+    private String associatedTokenAddress(byte[] owner, byte[] mint) {
+        // A Token-2022 associated token account is derived with the Token-2022
+        // program id (the account owner) as the PDA seed — never the legacy
+        // SPL Token program (Tokenkeg...). Both program ids are locked down as
+        // literal base58 strings so no legacy constant can bleed into the PDA.
         return Base58Codec.encode(SolanaPdaUtil.findProgramAddress(
-                        List.of(owner, Base58Codec.decode(Token2022Program.TOKEN_2022_PROGRAM_ID), mint),
-                        ataProgram)
+                        List.of(owner,
+                                Base58Codec.decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+                                mint),
+                        Base58Codec.decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"))
                 .address());
     }
 
     private SolanaInstruction createAssociatedTokenAccount(byte[] funder, byte[] ata,
-                                                           byte[] owner, byte[] mint,
-                                                           byte[] ataProgram, byte[] tokenProgram) {
+                                                           byte[] owner, byte[] mint) {
+        // Program id is the ATA program and account 5 is the token program that
+        // will OWN the created account. For a Token-2022 mint the token program
+        // MUST be Token-2022 (Tokenz...), never legacy SPL Token (Tokenkeg...),
+        // or the ATA program rejects the instruction with `IncorrectProgramId`.
+        // Both are hardcoded as literal base58 strings to lock the program ids.
         return new SolanaInstruction(
-                ataProgram,
+                Base58Codec.decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
                 List.of(
                         new AccountMeta(funder, true, true),
                         new AccountMeta(ata, false, true),
                         new AccountMeta(owner, false, false),
                         new AccountMeta(mint, false, false),
                         new AccountMeta(Base58Codec.decode(SolanaMintService.SYSTEM_PROGRAM_ID), false, false),
-                        new AccountMeta(tokenProgram, false, false)),
+                        new AccountMeta(Base58Codec.decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"), false, false)),
                 new byte[]{ATA_CREATE_DISCRIMINATOR});
     }
 
     private SolanaInstruction buildMintTo(byte[] mint, byte[] destination, byte[] authority,
-                                          long amount, byte[] tokenProgram) {
+                                          long amount) {
+        // MintTo must target the Token-2022 program id (Tokenz...), not the legacy
+        // SPL Token program (Tokenkeg...), because the mint is a Token-2022 mint.
+        // The program id is hardcoded as a literal base58 string to lock it down.
         return new SolanaInstruction(
-                tokenProgram,
+                Base58Codec.decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
                 List.of(
                         new AccountMeta(mint, false, true),
                         new AccountMeta(destination, false, true),
@@ -306,14 +315,38 @@ class DevnetLifecycleSmokeTest {
 
     private TokenAccountBalance awaitTokenBalance(String tokenAccount) throws InterruptedException {
         for (int attempt = 0; attempt < FINALITY_POLL_SECONDS; attempt++) {
-            TokenAccountBalance balance = rpcAdapter.getTokenAccountBalance(tokenAccount);
-            if (balance != null && balance.amount() != null) {
-                return balance;
+            try {
+                TokenAccountBalance balance = rpcAdapter.getTokenAccountBalance(tokenAccount);
+                if (balance != null && balance.amount() != null
+                        && Long.parseLong(balance.amount()) > 0L) {
+                    return balance;
+                }
+                // The account is visible but its balance is still 0: the mint/transfer
+                // transaction has not yet propagated to the read endpoint. Fall through
+                // and retry rather than returning a stale zero balance.
+            } catch (SolanaRpcException ex) {
+                if (!isMissingAccount(ex)) {
+                    throw ex;
+                }
+                // The associated token account may not be visible to the node yet
+                // (the creating/minting transaction is still confirming). Swallow
+                // the transient "could not find account" error and retry.
             }
-            Thread.sleep(1000L);
+            Thread.sleep(2000L);
         }
         throw new IllegalStateException("Token account balance did not become available on Devnet "
                 + "within " + FINALITY_POLL_SECONDS + "s: " + tokenAccount);
+    }
+
+    /**
+     * A {@code getTokenAccountBalance} call for an account the node has not yet
+     * indexed returns a transient JSON-RPC {@code -32602} "Invalid param: could
+     * not find account" error rather than an empty balance.
+     */
+    private boolean isMissingAccount(SolanaRpcException ex) {
+        String message = ex.getMessage();
+        return message != null
+                && (message.contains("could not find account") || message.contains("-32602"));
     }
 
     private SignatureStatusResult awaitConfirmation(String signature) throws InterruptedException {
