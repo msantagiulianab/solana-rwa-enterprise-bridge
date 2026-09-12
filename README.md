@@ -369,9 +369,10 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 195 |
 | Backend integration tests (`*IT.java`) | 74 |
+| Backend live Devnet smoke tests (gated) | 1 |
 | Frontend specs | 47 |
 
-**Backend total: 269 passing tests** (195 unit + 74 integration).
+**Backend total: 269 passing tests** (195 unit + 74 integration), plus **1 live Devnet smoke test** that is skipped by default and only runs when `RUN_DEVNET_SMOKE_TESTS=true`.
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `TokenTransferServiceTest` (2) · `TokenClawbackServiceTest` (3) · `ComputeBudgetInstructionTest` (7) · `Token2022MintExtensionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `ComplianceClawbackControllerTest` (8) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (8) · `MaritimeSettlementControllerTest` (9)
 
@@ -380,6 +381,29 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 **Breakdown (frontend):** `AssetTokenizationComponent` (13) · `AuditLogComponent` (11) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
+
+## Live Devnet Smoke Test
+
+[`DevnetLifecycleSmokeTest`](backend/src/test/java/com/solana/rwa/bridge/smoke/DevnetLifecycleSmokeTest.java)
+is a Spring Boot integration test that performs a **live** lifecycle against the real Solana Devnet RPC
+(`https://api.devnet.solana.com`, or `SOLANA_DEVNET_RPC_URL`): it onboards a KYC-`VERIFIED` investor,
+registers/mints a Token-2022 asset, stages associated token accounts + minted supply, executes a
+compliant transfer, and asserts the broadcast transaction signature confirms on-chain with funds
+actually moving.
+
+It is gated by `@EnabledIfEnvironmentVariable(named = "RUN_DEVNET_SMOKE_TESTS", matches = "true")`,
+so the standard offline build (`./mvnw test`) **skips it entirely — zero network calls**.
+
+To run it, supply a funded Devnet keypair (fund the derived fee-payer at
+https://faucet.solana.com) and execute:
+
+```bash
+cd backend
+RUN_DEVNET_SMOKE_TESTS=true SOLANA_DEVNET_PRIVATE_KEY=<your-key> ./mvnw test -Dtest=DevnetLifecycleSmokeTest
+```
+
+`SOLANA_DEVNET_PRIVATE_KEY` accepts a raw 32-byte base58 seed, a Phantom 64-byte base58 export, or a
+Solana CLI JSON byte-array keypair. The key is never committed or logged.
 
 ## Conventions
 

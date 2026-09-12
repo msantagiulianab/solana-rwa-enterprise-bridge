@@ -1327,6 +1327,50 @@ deliverables are complete — `TokenClawbackService` (core service), the secured
 `POST /api/v1/compliance/clawback` REST surface, and the end-to-end H2 integration
 verification. Permanent Delegate clawback execution is **complete**.
 
+---
+
+## 2026-09-12
+
+### Devnet Transfer Hook Smoke Test — Deliverable 1 Live Lifecycle Suite (GREEN: 269 backend + 1 gated smoke)
+
+**Plan:** Stand up the first live Solana Devnet smoke test so the Token-2022 mint +
+compliant-transfer lifecycle can be proven against `api.devnet.solana.com` while
+remaining invisible to the standard offline CI build.
+
+**Implementation:**
+- New `DevnetLifecycleSmokeTest` in the `com.solana.rwa.bridge.smoke` package, annotated
+  `@EnabledIfEnvironmentVariable(named = "RUN_DEVNET_SMOKE_TESTS", matches = "true")`
+  so the entire class (Spring context included) is **skipped offline — zero network bytes**.
+- Boots the full Spring context with `@ActiveProfiles("test")` (H2 + Flyway) and the **real**
+  `SolanaRpcAdapter` (no `@MockitoBean`), so every JSON-RPC call hits live Devnet.
+- Phase 1 flow: onboards a KYC-`VERIFIED` investor (wallet = the funded fee payer), registers
+  and mints a Token-2022 asset through the production `TokenService` → `SolanaMintService`
+  path (asserting the mint exists on-chain and is owned by the Token-2022 program), then stages
+  the transfer prerequisites (associated token accounts via the ATA program + a `MintTo` supply)
+  and executes a compliant transfer through `TokenTransferService`, asserting the broadcast
+  signature reaches confirmed/finalized commitment with no execution error and funds move.
+- The cleared transfer additionally asserts a durable `CLEARED` `transfer_hook_audit_logs` row
+  carrying the real on-chain signature.
+- Added an explicit `SOLANA_DEVNET_PRIVATE_KEY` precondition so a missing/funded key fails fast
+  with operator guidance rather than surfacing as an opaque RPC error.
+
+**Decisions:**
+- The transfer prerequisites are staged with self-contained in-test helpers that reuse the
+  existing `SolanaTransactionSerializer` + `SolanaRpcAdapter` rather than expanding the production
+  service surface for this deliverable.
+- The mint is verified via on-chain account state (owner == Token-2022 program id) because
+  `SolanaMintService.createMint()` intentionally returns the mint address, not the broadcast
+  signature; the transfer's live signature is verified directly via `getSignatureStatuses`.
+
+**Verification:** `backend/mvnw test` → **270 tests, 0 failures, 0 errors, 1 skipped**
+(269 passing + the gated smoke test skipped). The smoke test reports `Skipped: 1` with no
+context load and no network calls when `RUN_DEVNET_SMOKE_TESTS` is unset.
+
+**Milestone:** `tasks/devnet-transfer-hook-smoke-test.md` Deliverable 1 (live smoke suite +
+register/mint/cleared-transfer Phase 1) is **complete**; live verification requires an operator
+to supply a funded Devnet keypair via
+`RUN_DEVNET_SMOKE_TESTS=true SOLANA_DEVNET_PRIVATE_KEY=<key> ./mvnw test -Dtest=DevnetLifecycleSmokeTest`.
+
 
 
 
