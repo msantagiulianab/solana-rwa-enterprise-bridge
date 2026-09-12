@@ -132,7 +132,7 @@ class TokenClawbackServiceTest {
         when(rpcAdapter.sendTransaction("signed-tx")).thenReturn("tx-signature");
 
         ClawbackRequest request = request();
-        ClawbackResult result = service.clawback(request);
+        ClawbackResult result = service.clawback(request, "idem-clawback-0001");
 
         assertThat(result.signature()).isEqualTo("tx-signature");
         assertThat(result.action()).isEqualTo(TokenClawbackService.ACTION_CLAWBACK);
@@ -157,7 +157,7 @@ class TokenClawbackServiceTest {
         assertThat(saved.getWalletAddress()).isEqualTo(request.sourceTokenAccount());
         assertThat(saved.getAssetId()).isEqualTo(request.mintAddress());
         assertThat(saved.getSolanaTransactionSignature()).isEqualTo("tx-signature");
-        assertThat(saved.getIdempotencyKey()).isNotBlank();
+        assertThat(saved.getIdempotencyKey()).isEqualTo("idem-clawback-0001");
 
         verify(rpcAdapter).sendTransaction("signed-tx");
     }
@@ -173,7 +173,7 @@ class TokenClawbackServiceTest {
                         "Solana RPC call 'sendTransaction' failed: JSON-RPC error -32002 (Blockhash not found)"))
                 .thenReturn("tx-signature");
 
-        ClawbackResult result = service.clawback(request());
+        ClawbackResult result = service.clawback(request(), "idem-clawback-0001");
 
         assertThat(result.signature()).isEqualTo("tx-signature");
         verify(rpcAdapter, times(2)).getLatestBlockhash();

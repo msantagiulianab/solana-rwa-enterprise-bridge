@@ -65,16 +65,17 @@ public class TokenClawbackService {
      * Builds, signs, and broadcasts the clawback transfer, then records an
      * immutable {@code CLAWBACK} audit entry.
      *
-     * @param request clawback target (mint, source/destination token accounts, amount, reason)
+     * @param request        clawback target (mint, source/destination token accounts, amount, reason)
+     * @param idempotencyKey client-supplied unique key guarding duplicate RPC broadcasts
      * @return the broadcast signature and clawback metadata
      * @throws SolanaRpcException when the RPC layer fails after exhausting blockhash retries
      */
-    public ClawbackResult clawback(ClawbackRequest request) {
+    public ClawbackResult clawback(ClawbackRequest request, String idempotencyKey) {
         SolanaInstruction transfer = buildTransferChecked(request);
         SolanaKeypair delegate = keypairService.resolveKeypair();
         String signature = submitWithBlockhashRetry(List.of(transfer), List.of(delegate));
 
-        auditLogRepository.save(toAuditLog(request, signature));
+        auditLogRepository.save(toAuditLog(request, signature, idempotencyKey));
 
         return new ClawbackResult(signature, ACTION_CLAWBACK,
                 request.mintAddress(), request.sourceTokenAccount(),
@@ -102,13 +103,17 @@ public class TokenClawbackService {
                 List.of(new AccountMeta(validationAddress, false, false)));
     }
 
-    private AuditLog toAuditLog(ClawbackRequest request, String transactionSignature) {
+    private AuditLog toAuditLog(ClawbackRequest request, String transactionSignature,
+                                String idempotencyKey) {
+        String effectiveIdempotencyKey = (idempotencyKey == null || idempotencyKey.isBlank())
+                ? UUID.randomUUID().toString()
+                : idempotencyKey;
         return AuditLog.builder()
                 .walletAddress(request.sourceTokenAccount())
                 .action(ACTION_CLAWBACK)
                 .status(AuditLogStatus.APPROVED)
                 .reason(request.reason())
-                .idempotencyKey(UUID.randomUUID().toString())
+                .idempotencyKey(effectiveIdempotencyKey)
                 .assetId(request.mintAddress())
                 .solanaTransactionSignature(transactionSignature)
                 .timestamp(Instant.now())

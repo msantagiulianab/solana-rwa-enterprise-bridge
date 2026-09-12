@@ -1236,5 +1236,55 @@ stale-blockhash retry), and record an immutable `AuditLog` entry with
   the real on-chain signature); RPC failures propagate as `SolanaRpcException`
   after the retry budget is exhausted, mirroring `TokenTransferService`.
 
+---
+
+### Permanent Delegate Clawback Execution — Deliverable 2 REST Controller & DTOs (GREEN: 267 backend)
+
+**Plan:** Expose the clawback capability as a secured administrative REST route:
+a Bean-validated `ClawbackRequestDto` (carrying a client-supplied
+`idempotencyKey`), a typed `ClawbackResponseDto`, and `ComplianceClawbackController`
+at `POST /api/v1/compliance/clawback`, gated by the existing `X-API-Key`
+interceptor and mapped onto `TokenClawbackService`.
+
+**Implementation:**
+- `ClawbackRequestDto` — Jakarta Bean Validation on every field: `@NotBlank` +
+  custom `@ValidSolanaAddress` on the mint/source/destination accounts,
+  `@Positive` on `amount`, `@NotBlank` + `@Size` on `reason` (≤ 1000) and
+  `idempotencyKey` (≤ 255).
+- `ClawbackResponseDto` — immutable projection of `ClawbackResult` (signature,
+  action, mint/source/destination, amount, executedAt) via a `from(...)` factory.
+- `ComplianceClawbackController` — `@RestController` under `/api/v1/compliance`;
+  `POST /clawback` validates the payload (`@Valid`), maps it to the service-layer
+  `ClawbackRequest`, and threads the client idempotency key.
+- `TokenClawbackService.clawback` now accepts the client `idempotencyKey` (with a
+  UUID fallback for null/blank) so the audit ledger records the caller's
+  deduplication key instead of an always-fresh server UUID.
+
+**Tests (TDD):** New `@WebMvcTest` `ComplianceClawbackControllerTest` (8) using
+Spring Boot 3.5 `@MockitoBean`:
+- `clawback_returns200AndDelegatesToService` — asserts the 200 response contract
+  (signature/action/accounts/amount/executedAt) and captures the mapped
+  `ClawbackRequest` + idempotency key passed to the service.
+- `clawback_returns401WhenApiKeyMissing` / `...Invalid` — the `X-API-Key` gate
+  rejects with 401 and `verifyNoInteractions` proves the service is never invoked.
+- `clawback_returns400WhenMintAddressBlank`, `...SourceAddressInvalidFormat`,
+  `...AmountNotPositive`, `...IdempotencyKeyBlank`, `...BodyMalformed` — Bean
+  validation and malformed bodies return 400 (sanitized `$.message`) without
+  touching the service.
+
+**Verification:** `backend/mvnw test -Dtest=ComplianceClawbackControllerTest` →
+8 tests, 0 failures, 0 errors; full `backend/mvnw test` → **267 tests, 0 failures,
+0 errors** (195 unit + 72 integration). The Deliverable 1 `TokenClawbackServiceTest`
+was updated to the new two-argument `clawback(request, idempotencyKey)` signature.
+
+**Decisions:**
+- The clawback route returns `200 OK` (an executed action, not a created resource)
+  and relies on the interceptor registered in `WebConfig` for authentication —
+  no route-specific auth logic is duplicated.
+- The client idempotency key is threaded end-to-end (DTO → controller → service →
+  audit log) so network retries cannot mint duplicate on-chain clawbacks; a null or
+  blank key still falls back to a server UUID for direct service callers.
+
+
 
 
