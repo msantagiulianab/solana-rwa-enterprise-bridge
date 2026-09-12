@@ -1044,3 +1044,55 @@ Permanent Delegate wire format). Backend expanded **234 → 244 tests**
   token accounts, keeping KYC/AML off-chain and the token accounts on-chain.
 
 
+
+---
+
+## 2026-09-12
+
+### Week 3 Follow-up: Compliance Audit Persistence (Flyway V5 + JPA) (GREEN: 254 backend)
+
+**Plan:** Persist every transfer-hook compliance evaluation (CLEARED/BLOCKED)
+immutably to PostgreSQL via a Flyway migration and a Spring Data JPA repository,
+so the fail-closed Token-2022 transfer hook path leaves a durable off-chain
+audit trail.
+
+**Deliverable 1 — Flyway migration `V5__create_transfer_hook_audit.sql`:**
+creates `transfer_hook_audit_logs` with a UUID primary key, a **nullable**
+`transaction_signature` (blocked evaluations never broadcast, so there is no
+signature to record), NOT NULL `mint_address`/`source_wallet`/`destination_wallet`/
+`amount`/`compliance_status`/`created_at`, a nullable `reason_code`, and indices
+on `mint_address`, `source_wallet`, `destination_wallet`, and `created_at`. The
+migration is additive and never rewrites V1–V4 history.
+
+**Deliverable 2 — JPA entity & repository:**
+- `TransferHookAuditStatus` enum (`CLEARED`, `BLOCKED`) — deliberately uses the
+  transfer-hook domain vocabulary instead of the SPI's `APPROVED`, so the ledger
+  records the clearing decision without coupling to the SPI enum.
+- `TransferHookAuditLog` immutable entity (write-once: non-updatable `created_at`,
+  no `updated_at`) mapping 1:1 to the V5 columns.
+- `TransferHookAuditLogRepository extends JpaRepository` with derived lookups:
+  `findByMintAddress`, `findBySourceWallet`, `findByDestinationWallet`,
+  `findByComplianceStatus`, and `findByCreatedAtAfter`.
+
+**Tests (TDD, RED → GREEN):** wrote `TransferHookAuditLogRepositoryIT` first
+(RED: compile failure), then added the entity/enum/repository/migration (GREEN).
+10 `@DataJpaTest` cases cover UUID/`created_at` generation, the **nullable**
+`transaction_signature` on the blocked path vs. a populated signature on the
+cleared path, all five derived lookups, the NOT NULL `mint_address` constraint
+(`DataIntegrityViolationException`), and Flyway schema execution (native
+`SELECT COUNT(*)` against the migrated table).
+
+**Verification:** `backend/mvnw test` → **254 tests, 0 failures, 0 errors**
+(182 unit + 72 integration); `TransferHookAuditLogRepositoryIT` (10) is the
+only change to the count.
+
+**Decisions:**
+- Tests run Flyway against H2 in PostgreSQL mode (`ddl-auto: none` in the `test`
+  profile), so the repository integration test persists against the exact V5
+  schema rather than auto-generated DDL.
+- `transaction_signature` length (88) and wallet lengths (44) mirror the existing
+  base58 signature/pubkey conventions from V2/V4.
+- Hexagonal SPI integration (persisting an audit record inside
+  `TokenTransferService` before returning `TransferComplianceResult`) is deferred
+  to the next deliverable; this step only lands the persistence substrate.
+
