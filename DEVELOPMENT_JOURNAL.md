@@ -1285,6 +1285,49 @@ was updated to the new two-argument `clawback(request, idempotencyKey)` signatur
   audit log) so network retries cannot mint duplicate on-chain clawbacks; a null or
   blank key still falls back to a server UUID for direct service callers.
 
+---
+
+### Permanent Delegate Clawback Execution — Deliverable 3 Test Suite Verification (GREEN: 269 backend)
+
+**Plan:** Close out the clawback task with a full offline integration test that
+boots the Spring context (H2 + Flyway), autowires the real `TokenClawbackService`
+and `AuditLogRepository`, and mocks only the `SolanaRpcAdapter` to prove the
+execution flow and audit-log persistence end-to-end without any live Devnet
+traffic.
+
+**Implementation:**
+- New `ClawbackIT` (`@SpringBootTest` + `@ActiveProfiles("test")`) sets
+  `solana.transfer-hook.program-id` via `@TestPropertySource` so the transfer-hook
+  PDA is resolvable, and clears `audit_logs` in `@BeforeEach` for an isolated ledger.
+- `clawback_approvedPersistsAuditLogAndBroadcasts` — mocks `getLatestBlockhash`
+  and `sendTransaction`, invokes `clawback(request, "idem-clawback-0001")`, then
+  asserts `sendTransaction` was called and a single persisted `AuditLog` row
+  carries action `CLAWBACK`, status `APPROVED`, the client idempotency key, the
+  source token account as wallet address, the mint as asset id, the reason, the
+  broadcast signature, and a non-null timestamp.
+- `buildTransferChecked_appendsExtraAccountMetasValidationPda` — exercises the real
+  Spring-wired keypair/serializer beans and asserts the instruction appends the
+  transfer-hook `extra-account-metas` validation PDA as a readonly, non-signer
+  account (5 accounts total).
+
+**Verification:** `backend/mvnw clean test` → **269 tests, 0 failures, 0 errors**
+(195 unit + 74 integration). `ClawbackIT` (2) is the only count change from the
+Deliverable 2 baseline of 267.
+
+**Decisions:**
+- `ClawbackIT` mirrors the proven `TransferHookIT` shape (full Spring context +
+  `@MockitoBean SolanaRpcAdapter`), so the clawback path is verified against the
+  exact Flyway H2 schema the production deployment validates against.
+- The audit assertions cover every column the service writes, pinning the
+  immutable `CLAWBACK` ledger contract (idempotency key, metadata, and signature)
+  so future regressions in the service mapper fail fast.
+
+**Milestone:** All three `tasks/permanent-delegate-clawback-execution.md`
+deliverables are complete — `TokenClawbackService` (core service), the secured
+`POST /api/v1/compliance/clawback` REST surface, and the end-to-end H2 integration
+verification. Permanent Delegate clawback execution is **complete**.
+
+
 
 
 
