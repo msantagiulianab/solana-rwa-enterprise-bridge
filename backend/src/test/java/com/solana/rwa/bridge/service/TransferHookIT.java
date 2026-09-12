@@ -3,7 +3,10 @@ package com.solana.rwa.bridge.service;
 import com.solana.rwa.bridge.compliance.adapter.out.simulation.SimulatedTransferComplianceAdapter;
 import com.solana.rwa.bridge.dto.TokenTransferRequest;
 import com.solana.rwa.bridge.dto.TokenTransferResult;
+import com.solana.rwa.bridge.entity.TransferHookAuditLog;
+import com.solana.rwa.bridge.entity.TransferHookAuditStatus;
 import com.solana.rwa.bridge.exception.ComplianceViolationException;
+import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
 import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
 import com.solana.rwa.bridge.solana.AccountMeta;
@@ -12,6 +15,7 @@ import com.solana.rwa.bridge.solana.SolanaInstruction;
 import com.solana.rwa.bridge.solana.SolanaKeypairService;
 import com.solana.rwa.bridge.solana.SolanaPdaUtil;
 import com.solana.rwa.bridge.solana.Token2022Program;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,8 +28,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -34,9 +38,11 @@ import static org.mockito.Mockito.when;
  *
  * <p>Boots the full Spring context (H2, Flyway, real keypair/serializer beans)
  * with the {@link SolanaRpcAdapter} mocked so no live Devnet traffic occurs.
- * Verifies that a blocked compliance decision aborts before any broadcast while
- * a compliant transfer appends the transfer hook {@code extra-account-metas}
- * validation PDA to the {@code TransferChecked} instruction.
+ * Verifies end-to-end that a compliant transfer appends the transfer hook
+ * {@code extra-account-metas} validation PDA and persists a {@code CLEARED}
+ * audit row carrying the broadcast signature, while a blocked decision aborts
+ * before any broadcast and persists a {@code BLOCKED} audit row with a null
+ * transaction signature.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -50,31 +56,60 @@ class TransferHookIT {
     @Autowired
     private TokenTransferService tokenTransferService;
 
+    @Autowired
+    private TransferHookAuditLogRepository transferHookAuditLogRepository;
+
     @MockitoBean
     private SolanaRpcAdapter rpcAdapter;
 
     private final SolanaKeypairService keypairService = new SolanaKeypairService("");
 
+    @BeforeEach
+    void setUp() {
+        transferHookAuditLogRepository.deleteAll();
+    }
+
     @Test
-    void transfer_compliantBroadcastsAndReturnsSignature() {
+    void transfer_compliantBroadcastsAndWritesClearedAuditLog() {
+        TokenTransferRequest request = compliantRequest();
         when(rpcAdapter.getLatestBlockhash()).thenReturn(new LatestBlockhash(BLOCKHASH, 1234L));
         when(rpcAdapter.sendTransaction(anyString())).thenReturn("tx-signature");
 
-        TokenTransferResult result = tokenTransferService.transfer(compliantRequest());
+        TokenTransferResult result = tokenTransferService.transfer(request);
 
         assertThat(result.signature()).isEqualTo("tx-signature");
         assertThat(result.complianceStatus()).isEqualTo("APPROVED");
         verify(rpcAdapter).sendTransaction(anyString());
+
+        List<TransferHookAuditLog> logs = transferHookAuditLogRepository.findByMintAddress(request.assetMintAddress());
+        assertThat(logs).hasSize(1);
+
+        TransferHookAuditLog log = logs.get(0);
+        assertThat(log.getComplianceStatus()).isEqualTo(TransferHookAuditStatus.CLEARED);
+        assertThat(log.getTransactionSignature()).isEqualTo("tx-signature");
+        assertThat(log.getSourceWallet()).isEqualTo(request.sourceWallet());
+        assertThat(log.getDestinationWallet()).isEqualTo(request.destinationWallet());
+        assertThat(log.getAmount()).isEqualTo(request.amount());
     }
 
     @Test
-    void transfer_blockedDestination_throwsAndNeverBroadcasts() {
-        assertThatThrownBy(() -> tokenTransferService.transfer(sanctionedRequest()))
+    void transfer_blockedDestination_throwsAndWritesBlockedAuditLogWithoutBroadcast() {
+        TokenTransferRequest request = sanctionedRequest();
+
+        assertThatThrownBy(() -> tokenTransferService.transfer(request))
                 .isInstanceOf(ComplianceViolationException.class)
                 .hasMessageContaining("SANCTIONED_DESTINATION");
 
-        // Fail-closed: no RPC bytes may be emitted on a blocked decision.
-        verify(rpcAdapter, never()).sendTransaction(anyString());
+        // Fail-closed: zero Devnet RPC calls may be emitted on a blocked decision.
+        verifyNoInteractions(rpcAdapter);
+
+        List<TransferHookAuditLog> logs = transferHookAuditLogRepository.findByMintAddress(request.assetMintAddress());
+        assertThat(logs).hasSize(1);
+
+        TransferHookAuditLog log = logs.get(0);
+        assertThat(log.getComplianceStatus()).isEqualTo(TransferHookAuditStatus.BLOCKED);
+        assertThat(log.getTransactionSignature()).isNull();
+        assertThat(log.getDestinationWallet()).isEqualTo(SimulatedTransferComplianceAdapter.SANCTIONED_DESTINATION_WALLET);
     }
 
     @Test

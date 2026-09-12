@@ -1141,3 +1141,46 @@ Spring autowiring of the new repository bean.
   append-only (no update of a pre-broadcast null signature).
 
 
+---
+
+### Week 3 Persistence Milestone — Deliverable 4 Complete (GREEN: 256 backend)
+
+**Plan:** Close out the compliance-audit-persistence task by extending the
+existing `TransferHookIT` to assert the end-to-end audit trail against H2,
+verifying that both the cleared and fail-closed paths leave a durable
+`transfer_hook_audit_logs` row.
+
+**Implementation:**
+- `TransferHookIT` now autowires `TransferHookAuditLogRepository` and clears the
+  table in `@BeforeEach` so each test asserts on an isolated ledger.
+- `transfer_compliantBroadcastsAndWritesClearedAuditLog` asserts that a compliant
+  transfer returns the broadcast signature, invokes `sendTransaction`, and
+  persists a single `CLEARED` row whose `transaction_signature` equals the
+  broadcast signature (plus source/destination/amount metadata).
+- `transfer_blockedDestination_throwsAndWritesBlockedAuditLogWithoutBroadcast`
+  asserts the sanctioned destination throws `ComplianceViolationException`
+  (`SANCTIONED_DESTINATION`), persists a single `BLOCKED` row with a `null`
+  transaction signature and the sanctioned destination wallet, and uses
+  `verifyNoInteractions(rpcAdapter)` to prove zero Devnet RPC calls.
+
+**Verification:** `backend/mvnw clean test` → **256 tests, 0 failures, 0 errors**
+(184 unit + 72 integration). The `TransferHookIT` test count is unchanged (3),
+as this deliverable strengthens the two existing paths rather than adding new
+cases.
+
+**Decisions:**
+- The integration test now exercises the real Flyway `V5` schema and the real
+  Spring Data JPA repository against H2 (PostgreSQL mode) with only the
+  `SolanaRpcAdapter` mocked, proving the full persistence wiring end-to-end
+  without any live Devnet traffic.
+- `deleteAll()` in `@BeforeEach` keeps the shared Spring context's H2 database
+  deterministic across test methods, since `@SpringBootTest` does not roll back
+  transactions by default.
+
+**Milestone:** All four `tasks/compliance-audit-persistence.md` deliverables are
+complete — Flyway V5 migration, immutable `TransferHookAuditLog` entity +
+repository, Hexagonal SPI integration in `TokenTransferService`, and the
+end-to-end integration verification. Week 3 compliance audit persistence is
+**complete**.
+
+
