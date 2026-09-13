@@ -1403,7 +1403,9 @@ compliant mint/transfer, fail-closed blocked compliance, and permanent-delegate 
 **Verification:** All three paths ran **100% GREEN on-chain** against the real Solana Devnet RPC —
 minting/transfer, blocked compliance audit, and permanent delegate clawback each passed with live
 signatures confirming on-chain. The offline `backend/mvnw test` build remains unaffected: the suite
-is gated by `RUN_DEVNET_SMOKE_TESTS=true` and skipped by default (zero network bytes).
+is gated by `RUN_DEVNET_SMOKE_TESTS=true` and skipped by default (zero network bytes). The offline
+suite now totals **272 tests** — `Tests run: 272, Failures: 0, Errors: 0, Skipped: 3`
+(195 unit + 74 integration + 3 gated smoke tests skipped offline).
 
 **Milestone:** `tasks/devnet-transfer-hook-smoke-test.md` is **complete** — the Token-2022 transfer
 hook and full RWA lifecycle (mint → compliant transfer → blocked compliance audit → permanent

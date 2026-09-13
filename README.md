@@ -362,7 +362,7 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 ## Architectural Roadmap
 
 - **Week 2 Milestone (Completed):** Finality confirmation outbox worker daemon, fail-closed maritime clearance SPI, and end-to-end DvP simulation harness with 234 passing backend tests.
-- **Week 3 Milestone (Completed):** Token-2022 asset issuance migrated to `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` with the Permanent Delegate extension, plus compliance-gated transfer hook infrastructure (extra-account-metas PDA resolution + a fail-closed `TransferCompliancePort` SPI).
+- **Week 3 Milestone (Completed):** Token-2022 asset issuance (`TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb`) with the Permanent Delegate extension; compliance-gated transfer hooks (extra-account-metas PDA resolution + a fail-closed `TransferCompliancePort` SPI); immutable transfer-hook audit persistence (Flyway V5 + `TransferHookAuditLogRepository`); the permanent-delegate clawback REST endpoint (`POST /api/v1/compliance/clawback`); and live Devnet verification of the full RWA lifecycle (mint/transfer, blocked-compliance audit, and clawback smoke tests).
 
 ## Test Counts
 
@@ -382,6 +382,31 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 **Breakdown (frontend):** `AssetTokenizationComponent` (13) · `AuditLogComponent` (11) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
+
+## Running the Test Suites (offline)
+
+The full test suite runs **offline by default** — no Docker, no PostgreSQL, and no Solana RPC
+network calls. The backend mocks `SolanaRpcAdapter` in every unit test and runs integration tests
+against in-memory H2 (PostgreSQL mode); only the gated live smoke tests touch the network.
+
+### Backend
+
+```bash
+cd backend
+./mvnw test        # macOS/Linux — 272 tests: 195 unit + 74 integration + 3 gated smoke (skipped)
+# Windows: mvnw.cmd test
+```
+
+Expect `Tests run: 272, Failures: 0, Errors: 0, Skipped: 3` — the 3 skipped tests are the
+gated live Devnet smoke tests (see below).
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm test -- --watch=false --browsers=ChromeHeadless   # 47 specs
+```
 
 ## Live Devnet Smoke Test
 
