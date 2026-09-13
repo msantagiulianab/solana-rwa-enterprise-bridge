@@ -1,16 +1,23 @@
 package com.solana.rwa.bridge.smoke;
 
+import com.solana.rwa.bridge.compliance.adapter.out.simulation.SimulatedTransferComplianceAdapter;
 import com.solana.rwa.bridge.dto.AssetTokenRegistrationRequest;
+import com.solana.rwa.bridge.dto.ClawbackRequest;
+import com.solana.rwa.bridge.dto.ClawbackResult;
 import com.solana.rwa.bridge.dto.TokenTransferRequest;
 import com.solana.rwa.bridge.dto.TokenTransferResult;
 import com.solana.rwa.bridge.entity.AssetToken;
+import com.solana.rwa.bridge.entity.AuditLog;
+import com.solana.rwa.bridge.entity.AuditLogStatus;
 import com.solana.rwa.bridge.entity.Investor;
 import com.solana.rwa.bridge.entity.KycStatus;
 import com.solana.rwa.bridge.entity.SettlementStatus;
 import com.solana.rwa.bridge.entity.TransferHookAuditLog;
 import com.solana.rwa.bridge.entity.TransferHookAuditStatus;
+import com.solana.rwa.bridge.exception.ComplianceViolationException;
 import com.solana.rwa.bridge.exception.SolanaRpcException;
 import com.solana.rwa.bridge.repository.AssetTokenRepository;
+import com.solana.rwa.bridge.repository.AuditLogRepository;
 import com.solana.rwa.bridge.repository.InvestorRepository;
 import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
 import com.solana.rwa.bridge.rpc.SolanaRpcAdapter;
@@ -18,6 +25,7 @@ import com.solana.rwa.bridge.rpc.dto.AccountInfo;
 import com.solana.rwa.bridge.rpc.dto.LatestBlockhash;
 import com.solana.rwa.bridge.rpc.dto.SignatureStatusResult;
 import com.solana.rwa.bridge.rpc.dto.TokenAccountBalance;
+import com.solana.rwa.bridge.service.TokenClawbackService;
 import com.solana.rwa.bridge.service.TokenService;
 import com.solana.rwa.bridge.service.TokenTransferService;
 import com.solana.rwa.bridge.solana.AccountMeta;
@@ -41,6 +49,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Live lifecycle smoke test executed against the real Solana Devnet RPC.
@@ -83,6 +92,10 @@ class DevnetLifecycleSmokeTest {
     private static final int MINT_TO_DISCRIMINATOR = 7;
     private static final int ATA_CREATE_DISCRIMINATOR = 0;
 
+    /** SPL Associated Token Account program id (shared by legacy and Token-2022). */
+    private static final String ASSOCIATED_TOKEN_PROGRAM_ID =
+            "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
     private static final long MINTED_SUPPLY = 1_000_000L; // 1.0 token (6 decimals)
     private static final long TRANSFER_AMOUNT = 250_000L; // 0.25 tokens
 
@@ -93,6 +106,9 @@ class DevnetLifecycleSmokeTest {
 
     @Autowired
     private TokenTransferService tokenTransferService;
+
+    @Autowired
+    private TokenClawbackService tokenClawbackService;
 
     @Autowired
     private SolanaKeypairService keypairService;
@@ -112,42 +128,23 @@ class DevnetLifecycleSmokeTest {
     @Autowired
     private TransferHookAuditLogRepository transferHookAuditLogRepository;
 
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
     @Test
     void fullDevnetLifecycle_registerMintAndClearedTransfer_verifiesLiveSignatures()
             throws Exception {
         requireFundedDevnetKey();
-
-        // Isolate the off-chain ledger (H2) for a deterministic audit assertion.
-        transferHookAuditLogRepository.deleteAll();
-        assetTokenRepository.deleteAll();
-        investorRepository.deleteAll();
+        resetLedger();
 
         SolanaKeypair payer = keypairService.resolveKeypair();
         SolanaKeypair recipient = deriveRecipient();
 
-        // Step 1: onboard the fee payer as a KYC-verified investor so the
-        // TokenService fail-closed pre-flight gate passes.
-        investorRepository.save(Investor.builder()
-                .fullName("Devnet Smoke Issuer")
-                .email("issuer@devnet.smoke.test")
-                .walletAddress(payer.getPublicKeyBase58())
-                .kycStatus(KycStatus.VERIFIED)
-                .country("US")
-                .build());
+        // Step 1: onboard a KYC-verified issuer and execute the live Token-2022
+        // mint through the production TokenService/SolanaMintService path. The
+        // mint carries the Permanent Delegate extension set to the fee payer.
+        String mintAddress = onboardAndMint(payer, "devnet-smoke-mint-");
 
-        // Step 2: register an off-chain asset and execute the live Token-2022
-        // mint through the production TokenService/SolanaMintService path.
-        AssetToken asset = tokenService.create(AssetTokenRegistrationRequest.builder()
-                .assetName("Devnet Lifecycle Smoke Asset")
-                .valuationUsd(new BigDecimal("1000000.00"))
-                .issuerWalletAddress(payer.getPublicKeyBase58())
-                .idempotencyKey("devnet-smoke-mint-" + System.currentTimeMillis())
-                .build());
-
-        assertThat(asset.getMintAddress()).isNotBlank();
-        assertThat(asset.getSettlementStatus()).isEqualTo(SettlementStatus.CONFIRMED);
-
-        String mintAddress = asset.getMintAddress();
         AccountInfo mintInfo = awaitAccount(mintAddress);
         assertThat(mintInfo.exists()).as("mint %s must exist on-chain", mintAddress).isTrue();
         assertThat(mintInfo.owner()).as("mint must be owned by the Token-2022 program")
@@ -168,6 +165,12 @@ class DevnetLifecycleSmokeTest {
                         createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(destinationAta),
                                 recipientPubkey, mint)),
                 List.of(payer));
+
+        // Wait for both associated token accounts to become visible/initialized on
+        // Devnet before minting — otherwise the MintTo can race the ATA creation
+        // and target an account the node has not indexed yet.
+        awaitAccount(sourceAta);
+        awaitAccount(destinationAta);
 
         submit(List.of(buildMintTo(mint, Base58Codec.decode(sourceAta), payerPubkey,
                         MINTED_SUPPLY)),
@@ -213,6 +216,206 @@ class DevnetLifecycleSmokeTest {
         assertThat(logs.get(0).getTransactionSignature()).isEqualTo(transfer.signature());
     }
 
+    @Test
+    void blockedTransfer_recordsNullSignatureAuditAndLeavesDevnetUnchanged()
+            throws Exception {
+        requireFundedDevnetKey();
+        resetLedger();
+
+        SolanaKeypair payer = keypairService.resolveKeypair();
+        SolanaKeypair recipient = deriveRecipient();
+
+        String mintAddress = onboardAndMint(payer, "devnet-smoke-blocked-");
+        byte[] mint = Base58Codec.decode(mintAddress);
+        byte[] payerPubkey = payer.getPublicKeyBytes();
+        byte[] recipientPubkey = recipient.getPublicKeyBytes();
+
+        String sourceAta = associatedTokenAddress(payerPubkey, mint);
+        String destinationAta = associatedTokenAddress(recipientPubkey, mint);
+
+        submit(List.of(
+                        createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(sourceAta),
+                                payerPubkey, mint),
+                        createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(destinationAta),
+                                recipientPubkey, mint)),
+                List.of(payer));
+
+        // Wait for both associated token accounts to become visible/initialized on
+        // Devnet before minting — otherwise the MintTo can race the ATA creation
+        // and target an account the node has not indexed yet.
+        awaitAccount(sourceAta);
+        awaitAccount(destinationAta);
+
+        submit(List.of(buildMintTo(mint, Base58Codec.decode(sourceAta), payerPubkey,
+                        MINTED_SUPPLY)),
+                List.of(payer));
+
+        awaitTokenBalance(sourceAta);
+
+        // Snapshot the on-chain balances before attempting the blocked transfer.
+        long sourceBefore = Long.parseLong(rpcAdapter.getTokenAccountBalance(sourceAta).amount());
+        long destinationBefore = Long.parseLong(rpcAdapter.getTokenAccountBalance(destinationAta).amount());
+        assertThat(destinationBefore).as("destination must start unfunded").isZero();
+
+        // A sanctioned destination wallet forces the compliance SPI to BLOCK.
+        TokenTransferRequest blocked = new TokenTransferRequest(
+                payer.getPublicKeyBase58(),
+                SimulatedTransferComplianceAdapter.SANCTIONED_DESTINATION_WALLET,
+                sourceAta,
+                destinationAta,
+                mintAddress,
+                TRANSFER_AMOUNT);
+
+        assertThatThrownBy(() -> tokenTransferService.transfer(blocked))
+                .isInstanceOf(ComplianceViolationException.class)
+                .hasMessageContaining("SANCTIONED_DESTINATION");
+
+        // Fail-closed audit: exactly one BLOCKED row carrying a null transaction
+        // signature (no broadcast ever occurred).
+        List<TransferHookAuditLog> logs = transferHookAuditLogRepository.findByMintAddress(mintAddress);
+        assertThat(logs).hasSize(1);
+        assertThat(logs.get(0).getComplianceStatus()).isEqualTo(TransferHookAuditStatus.BLOCKED);
+        assertThat(logs.get(0).getTransactionSignature()).isNull();
+        assertThat(logs.get(0).getDestinationWallet())
+                .isEqualTo(SimulatedTransferComplianceAdapter.SANCTIONED_DESTINATION_WALLET);
+
+        // Devnet state is unchanged: the source still holds the full minted
+        // supply and the destination was never funded.
+        long sourceAfter = Long.parseLong(rpcAdapter.getTokenAccountBalance(sourceAta).amount());
+        assertThat(sourceAfter).as("blocked transfer must not move source funds")
+                .isEqualTo(sourceBefore);
+        assertThat(sourceAfter).isEqualTo(MINTED_SUPPLY);
+        long destinationAfter = Long.parseLong(rpcAdapter.getTokenAccountBalance(destinationAta).amount());
+        assertThat(destinationAfter).as("blocked transfer must not fund the destination")
+                .isZero();
+    }
+
+    @Test
+    void liveClawback_permanentDelegateRecoversFundsWithoutOwnerSignature()
+            throws Exception {
+        requireFundedDevnetKey();
+        resetLedger();
+
+        // The fee payer is both the mint's Permanent Delegate and the recovery
+        // destination; the recipient is the token holder whose funds are clawed
+        // back without their signature.
+        SolanaKeypair payer = keypairService.resolveKeypair();
+        SolanaKeypair recipient = deriveRecipient();
+
+        String mintAddress = onboardAndMint(payer, "devnet-smoke-clawback-");
+        byte[] mint = Base58Codec.decode(mintAddress);
+        byte[] payerPubkey = payer.getPublicKeyBytes();
+        byte[] recipientPubkey = recipient.getPublicKeyBytes();
+
+        String holderAta = associatedTokenAddress(recipientPubkey, mint);
+        String recoveryAta = associatedTokenAddress(payerPubkey, mint);
+
+        submit(List.of(
+                        createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(holderAta),
+                                recipientPubkey, mint),
+                        createAssociatedTokenAccount(payerPubkey, Base58Codec.decode(recoveryAta),
+                                payerPubkey, mint)),
+                List.of(payer));
+
+        // Wait for both associated token accounts to become visible/initialized on
+        // Devnet before minting — otherwise the MintTo can race the ATA creation
+        // and target an account the node has not indexed yet.
+        awaitAccount(holderAta);
+        awaitAccount(recoveryAta);
+
+        // Mint the supply to the HOLDER's account so the clawback has funds to recover.
+        submit(List.of(buildMintTo(mint, Base58Codec.decode(holderAta), payerPubkey,
+                        MINTED_SUPPLY)),
+                List.of(payer));
+
+        awaitTokenBalance(holderAta);
+        long holderBefore = Long.parseLong(rpcAdapter.getTokenAccountBalance(holderAta).amount());
+        assertThat(holderBefore).isEqualTo(MINTED_SUPPLY);
+
+        ClawbackResult clawback = tokenClawbackService.clawback(new ClawbackRequest(
+                        mintAddress,
+                        holderAta,
+                        recoveryAta,
+                        TRANSFER_AMOUNT,
+                        "Regulatory breach - permanent delegate recovery"),
+                "devnet-smoke-clawback-" + System.currentTimeMillis());
+
+        assertThat(clawback.signature()).isNotBlank();
+        assertThat(clawback.action()).isEqualTo(TokenClawbackService.ACTION_CLAWBACK);
+
+        SignatureStatusResult status = awaitConfirmation(clawback.signature());
+        assertThat(status.hasError())
+                .as("clawback %s must settle without an on-chain error (err=%s)",
+                        clawback.signature(), status.err())
+                .isFalse();
+        assertThat(status.isConfirmed() || status.isFinalized())
+                .as("clawback %s must reach confirmed/finalized commitment", clawback.signature())
+                .isTrue();
+
+        // The permanent delegate moved funds without the holder's signature. Wait
+        // for the read RPC to propagate the on-chain balance change before
+        // asserting, rather than reading immediately after the confirmed broadcast.
+        TokenAccountBalance holderBalance = awaitTokenBalance(holderAta, holderBefore - TRANSFER_AMOUNT);
+        assertThat(Long.parseLong(holderBalance.amount()))
+                .as("clawback must debit the holder")
+                .isEqualTo(holderBefore - TRANSFER_AMOUNT);
+
+        TokenAccountBalance recoveryBalance = awaitTokenBalance(recoveryAta, TRANSFER_AMOUNT);
+        assertThat(Long.parseLong(recoveryBalance.amount()))
+                .as("recovery account must receive the clawed-back amount")
+                .isEqualTo(TRANSFER_AMOUNT);
+
+        // The clawback leaves an immutable APPROVED CLAWBACK audit row carrying
+        // the real on-chain signature.
+        List<AuditLog> logs = auditLogRepository.findByWalletAddressAndAction(
+                holderAta, TokenClawbackService.ACTION_CLAWBACK);
+        assertThat(logs).hasSize(1);
+        assertThat(logs.get(0).getStatus()).isEqualTo(AuditLogStatus.APPROVED);
+        assertThat(logs.get(0).getSolanaTransactionSignature()).isEqualTo(clawback.signature());
+    }
+
+    // ---------------------------------------------------------------------
+    // Lifecycle setup helpers
+    // ---------------------------------------------------------------------
+
+    private void resetLedger() {
+        transferHookAuditLogRepository.deleteAll();
+        assetTokenRepository.deleteAll();
+        investorRepository.deleteAll();
+        auditLogRepository.deleteAll();
+    }
+
+    /**
+     * Onboards a KYC-{@code VERIFIED} issuer and executes a live Token-2022 mint
+     * (carrying the Permanent Delegate extension) through the production
+     * {@link TokenService}/{@link SolanaMintService} path, then waits for the
+     * mint account to appear on Devnet.
+     */
+    private String onboardAndMint(SolanaKeypair payer, String idempotencyPrefix)
+            throws InterruptedException {
+        investorRepository.save(Investor.builder()
+                .fullName("Devnet Smoke Issuer")
+                .email("issuer@devnet.smoke.test")
+                .walletAddress(payer.getPublicKeyBase58())
+                .kycStatus(KycStatus.VERIFIED)
+                .country("US")
+                .build());
+
+        AssetToken asset = tokenService.create(AssetTokenRegistrationRequest.builder()
+                .assetName("Devnet Lifecycle Smoke Asset")
+                .valuationUsd(new BigDecimal("1000000.00"))
+                .issuerWalletAddress(payer.getPublicKeyBase58())
+                .idempotencyKey(idempotencyPrefix + System.currentTimeMillis())
+                .build());
+
+        assertThat(asset.getMintAddress()).isNotBlank();
+        assertThat(asset.getSettlementStatus()).isEqualTo(SettlementStatus.CONFIRMED);
+
+        String mintAddress = asset.getMintAddress();
+        awaitAccount(mintAddress);
+        return mintAddress;
+    }
+
     // ---------------------------------------------------------------------
     // On-chain staging helpers (associated token account creation + mint-to)
     // ---------------------------------------------------------------------
@@ -220,32 +423,32 @@ class DevnetLifecycleSmokeTest {
     private String associatedTokenAddress(byte[] owner, byte[] mint) {
         // A Token-2022 associated token account is derived with the Token-2022
         // program id (the account owner) as the PDA seed — never the legacy
-        // SPL Token program (Tokenkeg...). Both program ids are locked down as
-        // literal base58 strings so no legacy constant can bleed into the PDA.
+        // SPL Token program (Tokenkeg...). Both program ids are locked to the
+        // canonical Token-2022 / ATA constants so no legacy id can bleed in.
         return Base58Codec.encode(SolanaPdaUtil.findProgramAddress(
                         List.of(owner,
-                                Base58Codec.decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+                                Base58Codec.decode(Token2022Program.TOKEN_2022_PROGRAM_ID),
                                 mint),
-                        Base58Codec.decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"))
+                        Base58Codec.decode(ASSOCIATED_TOKEN_PROGRAM_ID))
                 .address());
     }
 
     private SolanaInstruction createAssociatedTokenAccount(byte[] funder, byte[] ata,
                                                            byte[] owner, byte[] mint) {
-        // Program id is the ATA program and account 5 is the token program that
-        // will OWN the created account. For a Token-2022 mint the token program
-        // MUST be Token-2022 (Tokenz...), never legacy SPL Token (Tokenkeg...),
-        // or the ATA program rejects the instruction with `IncorrectProgramId`.
-        // Both are hardcoded as literal base58 strings to lock the program ids.
+        // Program id is the ATA program and account 5 (0-indexed) is the token
+        // program that will OWN the created account. For a Token-2022 mint the
+        // token program MUST be Token-2022 (Tokenz...), never legacy SPL Token
+        // (Tokenkeg...), or the ATA program rejects the instruction with
+        // `IncorrectProgramId`. Both program ids are locked to canonical constants.
         return new SolanaInstruction(
-                Base58Codec.decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
+                Base58Codec.decode(ASSOCIATED_TOKEN_PROGRAM_ID),
                 List.of(
                         new AccountMeta(funder, true, true),
                         new AccountMeta(ata, false, true),
                         new AccountMeta(owner, false, false),
                         new AccountMeta(mint, false, false),
                         new AccountMeta(Base58Codec.decode(SolanaMintService.SYSTEM_PROGRAM_ID), false, false),
-                        new AccountMeta(Base58Codec.decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"), false, false)),
+                        new AccountMeta(Base58Codec.decode(Token2022Program.TOKEN_2022_PROGRAM_ID), false, false)),
                 new byte[]{ATA_CREATE_DISCRIMINATOR});
     }
 
@@ -253,9 +456,9 @@ class DevnetLifecycleSmokeTest {
                                           long amount) {
         // MintTo must target the Token-2022 program id (Tokenz...), not the legacy
         // SPL Token program (Tokenkeg...), because the mint is a Token-2022 mint.
-        // The program id is hardcoded as a literal base58 string to lock it down.
+        // The program id is locked to the canonical Token-2022 constant.
         return new SolanaInstruction(
-                Base58Codec.decode("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+                Base58Codec.decode(Token2022Program.TOKEN_2022_PROGRAM_ID),
                 List.of(
                         new AccountMeta(mint, false, true),
                         new AccountMeta(destination, false, true),
@@ -336,6 +539,35 @@ class DevnetLifecycleSmokeTest {
         }
         throw new IllegalStateException("Token account balance did not become available on Devnet "
                 + "within " + FINALITY_POLL_SECONDS + "s: " + tokenAccount);
+    }
+
+    /**
+     * Polls until the account's balance reaches {@code expectedAmount} (raw token
+     * units), tolerating the read-side propagation delay that can lag a confirmed
+     * broadcast as well as the transient "could not find account" error.
+     */
+    private TokenAccountBalance awaitTokenBalance(String tokenAccount, long expectedAmount)
+            throws InterruptedException {
+        for (int attempt = 0; attempt < FINALITY_POLL_SECONDS; attempt++) {
+            try {
+                TokenAccountBalance balance = rpcAdapter.getTokenAccountBalance(tokenAccount);
+                if (balance != null && balance.amount() != null
+                        && Long.parseLong(balance.amount()) == expectedAmount) {
+                    return balance;
+                }
+                // The account is visible but the read endpoint still reports a stale
+                // balance (e.g. the pre-clawback amount). Fall through and retry
+                // until the post-transaction balance propagates.
+            } catch (SolanaRpcException ex) {
+                if (!isMissingAccount(ex)) {
+                    throw ex;
+                }
+                // Transient "could not find account": swallow and retry.
+            }
+            Thread.sleep(2000L);
+        }
+        throw new IllegalStateException("Token account balance did not reach " + expectedAmount
+                + " on Devnet within " + FINALITY_POLL_SECONDS + "s: " + tokenAccount);
     }
 
     /**

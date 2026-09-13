@@ -324,6 +324,7 @@ Mutating requests (`POST`/`PATCH`/`PUT`/`DELETE`) are gated by the backend's `X-
 | ✅ Done | Finality confirmation outbox worker: `@Scheduled` daemon polls the durable `finality_outbox` and advances `CONFIRMED → FINALIZED / FAILED / EXPIRED` via `getSignatureStatuses` with exponential backoff and fail-closed timeout handling |
 | ✅ Done | Maritime domain & clearance SPI: `BillOfLading` / `ContainerConsignment` / `CanalTransitSettlement` entities, Hexagonal `MaritimeClearancePort` + deterministic `SimulatedMaritimeClearanceAdapter`, fail-closed `MaritimeSettlementService` with `finality_outbox` enqueue |
 | ✅ Done | Maritime REST endpoints & DTOs: authenticated `MaritimeSettlementController` (`POST /bills-of-lading` 201, `POST /settlements/{id}/evaluate` 200/422, `POST /settlements/{id}/execute` 200, `GET` reads) with Jakarta Bean Validation request/response records |
+| ✅ Done | Token-2022 transfer hook & RWA lifecycle smoke tests: gated `DevnetLifecycleSmokeTest` verifies mint/transfer, blocked compliance audit, and permanent-delegate clawback live on Devnet (`RUN_DEVNET_SMOKE_TESTS=true`) |
 
 ## Render Deployment
 
@@ -369,10 +370,10 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 195 |
 | Backend integration tests (`*IT.java`) | 74 |
-| Backend live Devnet smoke tests (gated) | 1 |
+| Backend live Devnet smoke tests (gated) | 3 |
 | Frontend specs | 47 |
 
-**Backend total: 269 passing tests** (195 unit + 74 integration), plus **1 live Devnet smoke test** that is skipped by default and only runs when `RUN_DEVNET_SMOKE_TESTS=true`.
+**Backend total: 269 passing tests** (195 unit + 74 integration), plus **3 live Devnet smoke tests** that are skipped by default and only run when `RUN_DEVNET_SMOKE_TESTS=true`.
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `TokenTransferServiceTest` (2) · `TokenClawbackServiceTest` (3) · `ComputeBudgetInstructionTest` (7) · `Token2022MintExtensionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `ComplianceClawbackControllerTest` (8) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (8) · `MaritimeSettlementControllerTest` (9)
 
@@ -386,10 +387,17 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 [`DevnetLifecycleSmokeTest`](backend/src/test/java/com/solana/rwa/bridge/smoke/DevnetLifecycleSmokeTest.java)
 is a Spring Boot integration test that performs a **live** lifecycle against the real Solana Devnet RPC
-(`https://api.devnet.solana.com`, or `SOLANA_DEVNET_RPC_URL`): it onboards a KYC-`VERIFIED` investor,
-registers/mints a Token-2022 asset, stages associated token accounts + minted supply, executes a
-compliant transfer, and asserts the broadcast transaction signature confirms on-chain with funds
-actually moving.
+(`https://api.devnet.solana.com`, or `SOLANA_DEVNET_RPC_URL`). It exercises three on-chain paths:
+
+1. **Mint & compliant transfer** — onboards a KYC-`VERIFIED` investor, registers/mints a Token-2022
+   asset (with the Permanent Delegate extension), stages associated token accounts + minted supply,
+   executes a compliant `TransferChecked`, and asserts the broadcast signature confirms on-chain with
+   funds actually moving and a durable `CLEARED` transfer-hook audit row carrying the real signature.
+2. **Blocked compliance audit** — attempts a transfer to a sanctioned destination, asserting the
+   compliance SPI fails closed (`ComplianceViolationException`), a single `BLOCKED` transfer-hook audit
+   row with a `null` transaction signature (no broadcast ever occurred), and unchanged Devnet balances.
+3. **Permanent delegate clawback** — the fee-payer Permanent Delegate claws back a funded holder's
+   tokens through `TokenClawbackService` without the owner's signature, with recovery settling on-chain.
 
 It is gated by `@EnabledIfEnvironmentVariable(named = "RUN_DEVNET_SMOKE_TESTS", matches = "true")`,
 so the standard offline build (`./mvnw test`) **skips it entirely — zero network calls**.

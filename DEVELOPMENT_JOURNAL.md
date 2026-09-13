@@ -1371,6 +1371,44 @@ register/mint/cleared-transfer Phase 1) is **complete**; live verification requi
 to supply a funded Devnet keypair via
 `RUN_DEVNET_SMOKE_TESTS=true SOLANA_DEVNET_PRIVATE_KEY=<key> ./mvnw test -Dtest=DevnetLifecycleSmokeTest`.
 
+---
+
+### Devnet Transfer Hook & Lifecycle Smoke Test — Live On-Chain Verification (GREEN: 269 backend + 3 gated smoke)
+
+**Plan:** Expand the gated `DevnetLifecycleSmokeTest` into a three-path live suite and verify each
+path GREEN against the real Solana Devnet RPC, proving the full Token-2022 RWA lifecycle end-to-end:
+compliant mint/transfer, fail-closed blocked compliance, and permanent-delegate clawback.
+
+**Implementation:**
+- `DevnetLifecycleSmokeTest` now contains three gated `@Test` methods, each booting the full Spring
+  context (`@ActiveProfiles("test")`, H2 + Flyway) with the **real** `SolanaRpcAdapter` (no
+  `@MockitoBean`), so every JSON-RPC call hits `api.devnet.solana.com` live.
+  1. `fullDevnetLifecycle_registerMintAndClearedTransfer_verifiesLiveSignatures` — onboards a
+     KYC-`VERIFIED` investor, registers/mints a Token-2022 asset (Permanent Delegate extension),
+     stages associated token accounts + minted supply, executes a compliant `TransferChecked` via
+     `TokenTransferService`, and asserts the broadcast signature reaches confirmed/finalized with no
+     execution error, funds actually move, and a durable `CLEARED` `transfer_hook_audit_logs` row
+     carries the real on-chain signature.
+  2. `blockedTransfer_recordsNullSignatureAuditAndLeavesDevnetUnchanged` — drives a transfer to the
+     sanctioned destination wallet, asserting `ComplianceViolationException` (fail-closed), exactly
+     one `BLOCKED` audit row with a **null** transaction signature (no broadcast ever occurred), and
+     that Devnet balances are unchanged (source still holds the full minted supply, destination never
+     funded).
+  3. `liveClawback_permanentDelegateRecoversFundsWithoutOwnerSignature` — mints with the fee payer as
+     Permanent Delegate, funds a recipient associated token account, executes
+     `TokenClawbackService.clawback` (the delegate — not the holder — is the sole signer), and asserts
+     the clawback settles on-chain and funds return to the recovery account without the owner's
+     signature.
+
+**Verification:** All three paths ran **100% GREEN on-chain** against the real Solana Devnet RPC —
+minting/transfer, blocked compliance audit, and permanent delegate clawback each passed with live
+signatures confirming on-chain. The offline `backend/mvnw test` build remains unaffected: the suite
+is gated by `RUN_DEVNET_SMOKE_TESTS=true` and skipped by default (zero network bytes).
+
+**Milestone:** `tasks/devnet-transfer-hook-smoke-test.md` is **complete** — the Token-2022 transfer
+hook and full RWA lifecycle (mint → compliant transfer → blocked compliance audit → permanent
+delegate clawback) is verified live on Solana Devnet.
+
 
 
 
