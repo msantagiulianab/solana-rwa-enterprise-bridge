@@ -1,5 +1,9 @@
 package com.solana.rwa.bridge.dto;
 
+import com.solana.rwa.bridge.validation.ValidSolanaAddress;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+
 /**
  * Request payload for a Token-2022 secondary-market transfer executed through
  * the compliance-gated transfer hook path.
@@ -16,12 +20,29 @@ package com.solana.rwa.bridge.dto;
  * @param decimals                token decimals (0 triggers the RWA default of 6)
  */
 public record TokenTransferRequest(
+        @NotBlank(message = "sourceWallet must not be blank")
+        @ValidSolanaAddress(message = "sourceWallet must be a valid Solana address")
         String sourceWallet,
+
+        @NotBlank(message = "destinationWallet must not be blank")
+        @ValidSolanaAddress(message = "destinationWallet must be a valid Solana address")
         String destinationWallet,
+
+        @NotBlank(message = "sourceTokenAccount must not be blank")
+        @ValidSolanaAddress(message = "sourceTokenAccount must be a valid Solana address")
         String sourceTokenAccount,
+
+        @NotBlank(message = "destinationTokenAccount must not be blank")
+        @ValidSolanaAddress(message = "destinationTokenAccount must be a valid Solana address")
         String destinationTokenAccount,
+
+        @NotBlank(message = "assetMintAddress must not be blank")
+        @ValidSolanaAddress(message = "assetMintAddress must be a valid Solana address")
         String assetMintAddress,
+
+        @Positive(message = "amount must be positive")
         long amount,
+
         int decimals
 ) {
 

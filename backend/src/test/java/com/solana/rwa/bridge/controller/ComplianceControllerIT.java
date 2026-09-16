@@ -1,13 +1,20 @@
 package com.solana.rwa.bridge.controller;
 
+import com.solana.rwa.bridge.compliance.port.TransferComplianceReason;
+import com.solana.rwa.bridge.compliance.port.TransferComplianceResult;
+import com.solana.rwa.bridge.compliance.port.TransferComplianceStatus;
 import com.solana.rwa.bridge.dto.ComplianceCheckResponse;
+import com.solana.rwa.bridge.dto.TokenTransferRequest;
+import com.solana.rwa.bridge.dto.TokenTransferResult;
 import com.solana.rwa.bridge.entity.AssetTokenComplianceStatus;
 import com.solana.rwa.bridge.entity.KycStatus;
 import com.solana.rwa.bridge.entity.TransferHookAuditLog;
 import com.solana.rwa.bridge.entity.TransferHookAuditStatus;
+import com.solana.rwa.bridge.exception.ComplianceViolationException;
 import com.solana.rwa.bridge.exception.InvestorNotFoundException;
 import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
 import com.solana.rwa.bridge.service.ComplianceService;
+import com.solana.rwa.bridge.service.TokenTransferService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -25,6 +32,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -46,6 +54,10 @@ class ComplianceControllerIT {
     private static final String WALLET = "7XeXLabcDEFghijkmnpqrstuvwxyz23456789";
     private static final String MINT = "MNTabcdefghijkmnpqrstuvwxyz123456789";
     private static final String API_KEY = "test-api-key";
+    private static final String SOURCE_WALLET = "SRCabcdefghijkmnpqrstuvwxyz123456789";
+    private static final String DEST_WALLET = "DSTabcdefghijkmnpqrstuvwxyz123456789";
+    private static final String SOURCE_TOKEN_ACCOUNT = "SATAabcdefghijkmnpqrstuvwxyz12345678";
+    private static final String DEST_TOKEN_ACCOUNT = "DATAabcdefghijkmnpqrstuvwxyz12345678";
 
     @Autowired
     private MockMvc mockMvc;
@@ -55,6 +67,9 @@ class ComplianceControllerIT {
 
     @MockitoBean
     private TransferHookAuditLogRepository transferHookAuditLogRepository;
+
+    @MockitoBean
+    private TokenTransferService tokenTransferService;
 
     @Test
     void check_returns200AndAllowedWhenEligible() throws Exception {
@@ -231,5 +246,63 @@ class ComplianceControllerIT {
                 .andExpect(jsonPath("$[0].complianceStatus").value("CLEARED"))
                 .andExpect(jsonPath("$[0].reasonCode").value("KYC_PASSED"))
                 .andExpect(jsonPath("$[0].createdAt").exists());
+    }
+
+    @Test
+    void executeTransfer_compliant_returns200() throws Exception {
+        TokenTransferResult result = new TokenTransferResult(
+                "tx-signature", "APPROVED", "ref-transfer",
+                Instant.parse("2026-09-16T10:00:00Z"));
+        when(tokenTransferService.transfer(any(TokenTransferRequest.class))).thenReturn(result);
+
+        mockMvc.perform(post("/api/v1/compliance/transfer")
+                        .header("X-API-Key", API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validTransferPayload()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signature").value("tx-signature"))
+                .andExpect(jsonPath("$.complianceStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.referenceId").value("ref-transfer"))
+                .andExpect(jsonPath("$.evaluatedAt").exists());
+    }
+
+    @Test
+    void executeTransfer_sanctionedOrBlocked_returns422() throws Exception {
+        TransferComplianceResult blocked = new TransferComplianceResult(
+                TransferComplianceStatus.BLOCKED,
+                new TransferComplianceReason("OFAC", "SANCTIONED_DESTINATION"),
+                "ref-blocked", Instant.parse("2026-09-16T10:00:00Z"));
+        when(tokenTransferService.transfer(any(TokenTransferRequest.class)))
+                .thenThrow(new ComplianceViolationException(blocked));
+
+        mockMvc.perform(post("/api/v1/compliance/transfer")
+                        .header("X-API-Key", API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validTransferPayload()))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void executeTransfer_missingApiKey_returns401() throws Exception {
+        mockMvc.perform(post("/api/v1/compliance/transfer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validTransferPayload()))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(tokenTransferService);
+    }
+
+    private String validTransferPayload() {
+        return """
+                {
+                  "sourceWallet": "%s",
+                  "destinationWallet": "%s",
+                  "sourceTokenAccount": "%s",
+                  "destinationTokenAccount": "%s",
+                  "assetMintAddress": "%s",
+                  "amount": 1000000
+                }
+                """.formatted(SOURCE_WALLET, DEST_WALLET, SOURCE_TOKEN_ACCOUNT,
+                DEST_TOKEN_ACCOUNT, MINT);
     }
 }

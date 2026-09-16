@@ -1493,6 +1493,39 @@ compiles with zero errors.
 **Spring/Solana interactions:** Read-only render; no RPC dispatch. The badge only reflects the mint address already persisted off-chain and does not alter the compliance gate, audit trail, or idempotency behavior.
 
 **Verification:** `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → 55/55 SUCCESS; `SECURITY_API_KEY=<placeholder> npm --prefix frontend run build` compiles with zero errors.
+---
+
+### Expose authenticated POST /api/v1/compliance/transfer (TDD, GREEN: 276 tests)
+
+**Plan:** Expose an authenticated `POST /api/v1/compliance/transfer` endpoint that
+delegates a compliance-gated Token-2022 secondary-market transfer to
+`TokenTransferService.transfer(...)`.
+
+**Tests added (`ComplianceControllerIT` 11 → 14):**
+- `executeTransfer_compliant_returns200` — a valid `TokenTransferRequest` payload
+  with an `X-API-Key` returns HTTP 200 and the `TokenTransferResult` (signature,
+  compliance status, reference id, evaluatedAt).
+- `executeTransfer_sanctionedOrBlocked_returns422` — a blocked compliance decision
+  (`ComplianceViolationException`) maps to HTTP 422 via `GlobalExceptionHandler`.
+- `executeTransfer_missingApiKey_returns401` — the mutating route is rejected with
+  401 by `ApiKeyAuthInterceptor` before any service interaction.
+
+**Implementation:**
+- Injected `TokenTransferService` into `ComplianceController` and added
+  `@PostMapping("/transfer")` returning `tokenTransferService.transfer(request)`.
+- Reused the existing `TokenTransferRequest` record as the validated request body,
+  adding `@NotBlank` + `@ValidSolanaAddress` on all base58 address fields and
+  `@Positive` on `amount`.
+
+**Spring/Solana interactions:** The route is gated by the `X-API-Key`
+interceptor (`WebConfig`, `/api/**` mutating methods only). Off-chain compliance
+remains fail-closed: a `BLOCKED` decision throws `ComplianceViolationException`
+(422) before any Solana RPC bytes are emitted, and every attempt is persisted to
+the immutable `transfer_hook_audit_logs` ledger by the service.
+
+**Verification:** `./mvnw test` → `Tests run: 276, Failures: 0, Errors: 0,
+Skipped: 3` (195 unit + 78 integration + 3 gated smoke tests skipped offline).
+
 
 
 

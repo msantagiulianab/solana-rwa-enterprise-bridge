@@ -369,15 +369,15 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 | Suite | Count |
 |-------|-------|
 | Backend unit tests (`*Test.java`) | 195 |
-| Backend integration tests (`*IT.java`) | 75 |
+| Backend integration tests (`*IT.java`) | 78 |
 | Backend live Devnet smoke tests (gated) | 3 |
 | Frontend specs | 55 |
 
-**Backend total: 270 passing tests** (195 unit + 75 integration), plus **3 live Devnet smoke tests** that are skipped by default and only run when `RUN_DEVNET_SMOKE_TESTS=true`.
+**Backend total: 273 passing tests** (195 unit + 78 integration), plus **3 live Devnet smoke tests** that are skipped by default and only run when `RUN_DEVNET_SMOKE_TESTS=true`.
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `TokenTransferServiceTest` (2) · `TokenClawbackServiceTest` (3) · `ComputeBudgetInstructionTest` (7) · `Token2022MintExtensionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `ComplianceClawbackControllerTest` (8) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `MaritimeSettlementServiceTest` (8) · `MaritimeSettlementControllerTest` (9)
 
-**Breakdown (integration):** `ComplianceControllerIT` (11) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (7) · `AssetTokenRepositoryIT` (8) · `AuditLogRepositoryIT` (7) · `TransferHookIT` (3) · `TransferHookAuditLogRepositoryIT` (10) · `FinalityOutboxRepositoryIT` (2) · `ClawbackIT` (2) · `MaritimeRepositoryIT` (5) · `MaritimeSettlementE2EIT` (2)
+**Breakdown (integration):** `ComplianceControllerIT` (14) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (7) · `AssetTokenRepositoryIT` (8) · `AuditLogRepositoryIT` (7) · `TransferHookIT` (3) · `TransferHookAuditLogRepositoryIT` (10) · `FinalityOutboxRepositoryIT` (2) · `ClawbackIT` (2) · `MaritimeRepositoryIT` (5) · `MaritimeSettlementE2EIT` (2)
 
 **Breakdown (frontend):** `AssetTokenizationComponent` (15) · `AuditLogComponent` (17) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
@@ -393,11 +393,11 @@ against in-memory H2 (PostgreSQL mode); only the gated live smoke tests touch th
 
 ```bash
 cd backend
-./mvnw test        # macOS/Linux — 272 tests: 195 unit + 74 integration + 3 gated smoke (skipped)
+./mvnw test        # macOS/Linux — 276 tests: 195 unit + 78 integration + 3 gated smoke (skipped)
 # Windows: mvnw.cmd test
 ```
 
-Expect `Tests run: 272, Failures: 0, Errors: 0, Skipped: 3` — the 3 skipped tests are the
+Expect `Tests run: 276, Failures: 0, Errors: 0, Skipped: 3` — the 3 skipped tests are the
 gated live Devnet smoke tests (see below).
 
 ### Frontend
