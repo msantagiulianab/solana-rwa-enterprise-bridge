@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BackendApiService } from '../../shared/services/backend-api.service';
 import { AuditLog, AuditLogStatus, TransferHookAuditLog } from '../../shared/models/audit-log.model';
 
@@ -19,15 +20,23 @@ export class AuditLogComponent implements OnInit {
   transferHooksLoading = true;
   error: string | null = null;
 
-  activeTab: 'general' | 'transfer-hooks' = 'general';
+  activeTab: 'general' | 'transfer-hook' = 'general';
 
   /* Search / filter bindings */
   searchAction = '';
   filterStatus: AuditLogStatus | '' = '';
 
-  constructor(private readonly api: BackendApiService) {}
+  constructor(
+    private readonly api: BackendApiService,
+    private readonly route: ActivatedRoute,
+    private readonly router: Router,
+  ) {}
 
   ngOnInit(): void {
+    this.route.queryParamMap.subscribe((params) => {
+      this.activeTab = params.get('tab') === 'transfer-hook' ? 'transfer-hook' : 'general';
+    });
+
     this.api.getAuditLogs().subscribe({
       next: (logs) => {
         this.logs = logs.sort(
@@ -53,8 +62,13 @@ export class AuditLogComponent implements OnInit {
     });
   }
 
-  setActiveTab(tab: 'general' | 'transfer-hooks'): void {
+  setActiveTab(tab: 'general' | 'transfer-hook'): void {
     this.activeTab = tab;
+    void this.router.navigate([], {
+      queryParams: { tab: tab === 'transfer-hook' ? 'transfer-hook' : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   transferHookStatusBadge(status: string): string {

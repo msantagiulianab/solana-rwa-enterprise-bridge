@@ -6,7 +6,9 @@ declare global {
   interface Window {
     solana?: {
       isPhantom?: boolean;
-      connect(): Promise<{ publicKey: { toString(): string } }>;
+      connect(options?: {
+        onlyIfTrusted?: boolean;
+      }): Promise<{ publicKey: { toString(): string } }>;
       disconnect(): Promise<void>;
       on(event: string, callback: () => void): void;
       removeListener(event: string, callback: () => void): void;
@@ -14,7 +16,9 @@ declare global {
     phantom?: {
       solana?: {
         isPhantom?: boolean;
-        connect(): Promise<{ publicKey: { toString(): string } }>;
+        connect(options?: {
+          onlyIfTrusted?: boolean;
+        }): Promise<{ publicKey: { toString(): string } }>;
         disconnect(): Promise<void>;
         on(event: string, callback: () => void): void;
         removeListener(event: string, callback: () => void): void;
@@ -35,6 +39,7 @@ export class SolanaWalletService {
 
   constructor(@Inject(PLATFORM_ID) platformId: object) {
     this.isBrowser = isPlatformBrowser(platformId);
+    void this.autoConnect();
   }
 
   /**
@@ -102,6 +107,37 @@ export class SolanaWalletService {
       const message =
         err instanceof Error ? err.message : 'Wallet connection rejected or failed';
       throw new Error(message);
+    }
+  }
+
+  /**
+   * Attempts to reconnect to an already-authorized wallet session without
+   * prompting the user. Phantom's `connect({ onlyIfTrusted: true })` resolves
+   * only when the dApp is already trusted; otherwise it rejects and we fall
+   * back to the disconnected state silently.
+   */
+  async autoConnect(): Promise<string | null> {
+    if (!this.isBrowser) {
+      return null;
+    }
+
+    const provider = window.solana || window.phantom?.solana;
+    if (!provider || !provider.isPhantom) {
+      return null;
+    }
+
+    try {
+      const response = await provider.connect({ onlyIfTrusted: true });
+      const publicKey = response.publicKey.toString();
+      this.connectedPublicKeySubject.next(publicKey);
+
+      provider.on('disconnect', this.handleDisconnect);
+      provider.on('accountChanged', this.handleAccountChanged);
+
+      return publicKey;
+    } catch {
+      // No trusted session exists (or authorization was revoked).
+      return null;
     }
   }
 

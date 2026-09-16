@@ -11,8 +11,8 @@
       General Ledger
     </button>
     <button
-      (click)="setActiveTab('transfer-hooks')"
-      [ngClass]="activeTab === 'transfer-hooks' ? 'bg-solana-purple text-white' : 'text-gray-400 hover:text-white'"
+      (click)="setActiveTab('transfer-hook')"
+      [ngClass]="activeTab === 'transfer-hook' ? 'bg-solana-purple text-white' : 'text-gray-400 hover:text-white'"
       class="px-4 py-2 rounded-md text-sm font-semibold transition-colors"
     >
       Token-2022 Transfer Hook Audits
@@ -123,7 +123,7 @@
   </div>
 
   <!-- Token-2022 Transfer Hook Audits Tab -->
-  <div *ngIf="activeTab === 'transfer-hooks'">
+  <div *ngIf="activeTab === 'transfer-hook'">
     <!-- Loading State -->
     <div *ngIf="transferHooksLoading" class="flex items-center justify-center py-12">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-solana-purple"></div>

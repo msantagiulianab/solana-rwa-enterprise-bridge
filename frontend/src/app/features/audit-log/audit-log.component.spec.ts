@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, convertToParamMap, ParamMap } from '@angular/router';
+import { BehaviorSubject } from 'rxjs';
 import { AuditLogComponent } from './audit-log.component';
 import { environment } from '../../../environments/environment';
 import { AuditLog, TransferHookAuditLog } from '../../shared/models/audit-log.model';
@@ -9,6 +11,8 @@ describe('AuditLogComponent', () => {
   let component: AuditLogComponent;
   let fixture: ComponentFixture<AuditLogComponent>;
   let httpMock: HttpTestingController;
+  let routerMock: jasmine.SpyObj<Router>;
+  let queryParamMapSubject: BehaviorSubject<ParamMap>;
 
   const mockLogs: AuditLog[] = [
     {
@@ -64,8 +68,21 @@ describe('AuditLogComponent', () => {
   ];
 
   beforeEach(async () => {
+    routerMock = jasmine.createSpyObj<Router>('Router', ['navigate']);
+    routerMock.navigate.and.resolveTo(true);
+    queryParamMapSubject = new BehaviorSubject<ParamMap>(convertToParamMap({}));
+
     await TestBed.configureTestingModule({
       imports: [AuditLogComponent, HttpClientTestingModule, FormsModule],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            queryParamMap: queryParamMapSubject.asObservable(),
+          } as unknown as ActivatedRoute,
+        },
+        { provide: Router, useValue: routerMock },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AuditLogComponent);
@@ -246,20 +263,49 @@ describe('AuditLogComponent', () => {
     expect(component.activeTab).toBe('general');
   });
 
-  it('should toggle between general and transfer-hooks tabs', () => {
+  it('should toggle between general and transfer-hook tabs', () => {
     fixture.detectChanges();
     flushInitialLoad();
     fixture.detectChanges();
 
     expect(component.activeTab).toBe('general');
 
-    component.setActiveTab('transfer-hooks');
+    component.setActiveTab('transfer-hook');
     fixture.detectChanges();
-    expect(component.activeTab).toBe('transfer-hooks');
+    expect(component.activeTab).toBe('transfer-hook');
 
     component.setActiveTab('general');
     fixture.detectChanges();
     expect(component.activeTab).toBe('general');
+  });
+
+  it('should select the transfer-hook tab from the tab query param on init', () => {
+    queryParamMapSubject.next(convertToParamMap({ tab: 'transfer-hook' }));
+    fixture.detectChanges();
+    flushInitialLoad();
+    fixture.detectChanges();
+
+    expect(component.activeTab).toBe('transfer-hook');
+  });
+
+  it('should sync the active tab to the tab query param via the router', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+    fixture.detectChanges();
+
+    component.setActiveTab('transfer-hook');
+    expect(routerMock.navigate).toHaveBeenCalledWith([], {
+      queryParams: { tab: 'transfer-hook' },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+
+    component.setActiveTab('general');
+    expect(routerMock.navigate).toHaveBeenCalledWith([], {
+      queryParams: { tab: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   });
 
   it('should switch tabs from the segmented control', () => {
@@ -277,7 +323,7 @@ describe('AuditLogComponent', () => {
     transferHookBtn!.click();
     fixture.detectChanges();
 
-    expect(component.activeTab).toBe('transfer-hooks');
+    expect(component.activeTab).toBe('transfer-hook');
   });
 
   it('should render transfer hook rows with explorer links and null-sig indicator', () => {
@@ -285,7 +331,7 @@ describe('AuditLogComponent', () => {
     flushInitialLoad();
     fixture.detectChanges();
 
-    component.setActiveTab('transfer-hooks');
+    component.setActiveTab('transfer-hook');
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;

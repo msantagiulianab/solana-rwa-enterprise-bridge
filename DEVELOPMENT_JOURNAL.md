@@ -1569,3 +1569,46 @@ Skipped: 3` (199 unit + 78 integration + 3 gated smoke tests skipped offline).
 
 
 
+---
+
+### Frontend: wallet auto-reconnect + audit-log tab persistence (TDD, GREEN: 60 frontend specs)
+
+**Plan:** Fix two page-reload UI persistence issues: (1) restore an
+already-authorized Phantom wallet session on refresh and (2) keep the Audit Log
+viewer on the active sub-tab across reloads via a `?tab=transfer-hook` query
+param.
+
+**Tests added:**
+- `SolanaWalletService` (4 → 7):
+  - `should auto-connect to an already-trusted wallet without prompting` —
+    asserts `connect({ onlyIfTrusted: true })` is called and the public key is
+    emitted with `disconnect`/`accountChanged` listeners attached.
+  - `should silently return null when no trusted wallet session exists` — a
+    rejected `connect` resolves to `null` without surfacing an error.
+  - `should silently return null when no provider is detected`.
+- `AuditLogComponent` (17 → 19):
+  - `should select the transfer-hook tab from the tab query param on init` —
+    `?tab=transfer-hook` drives `activeTab`.
+  - `should sync the active tab to the tab query param via the router` — asserts
+    `router.navigate` with `{ queryParams: { tab }, queryParamsHandling: 'merge',
+    replaceUrl: true }`.
+
+**Implementation:**
+- `SolanaWalletService.autoConnect()` calls
+  `provider.connect({ onlyIfTrusted: true })` (Phantom wallet-standard
+  auto-connect) and is invoked from the service constructor so an authorized
+  session is restored immediately on app bootstrap; the global `Window` provider
+  type now accepts `{ onlyIfTrusted?: boolean }`.
+- `AuditLogComponent` injects `ActivatedRoute`/`Router`, initializes `activeTab`
+  from `route.queryParamMap` (`tab === 'transfer-hook'`), and `setActiveTab`
+  writes the param back (and removes it for `general`). Renamed the internal tab
+  value `transfer-hooks` → `transfer-hook` to match the URL contract.
+
+**Spring/Solana interactions:** No backend or RPC changes. The wallet reconnect
+is client-only and delegates signing to the browser provider; no key material is
+persisted.
+
+**Verification:** `npm --prefix frontend test -- --watch=false
+--browsers=ChromeHeadless` → 60/60 SUCCESS; `SECURITY_API_KEY=<placeholder>
+npm --prefix frontend run build` compiles with zero errors.
+
