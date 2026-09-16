@@ -1,6 +1,26 @@
 <div class="p-4 sm:p-6">
   <h1 class="text-xl sm:text-2xl font-bold text-white mb-6">Audit Log Viewer</h1>
 
+  <!-- Segmented Tab Switch -->
+  <div class="inline-flex rounded-lg border border-gray-700 bg-solana-dark p-1 mb-6">
+    <button
+      (click)="setActiveTab('general')"
+      [ngClass]="activeTab === 'general' ? 'bg-solana-purple text-white' : 'text-gray-400 hover:text-white'"
+      class="px-4 py-2 rounded-md text-sm font-semibold transition-colors"
+    >
+      General Ledger
+    </button>
+    <button
+      (click)="setActiveTab('transfer-hooks')"
+      [ngClass]="activeTab === 'transfer-hooks' ? 'bg-solana-purple text-white' : 'text-gray-400 hover:text-white'"
+      class="px-4 py-2 rounded-md text-sm font-semibold transition-colors"
+    >
+      Token-2022 Transfer Hook Audits
+    </button>
+  </div>
+
+  <!-- General Ledger Tab -->
+  <div *ngIf="activeTab === 'general'">
   <!-- Search and Filter Bar -->
   <div class="bg-solana-dark rounded-lg p-4 mb-6 border border-gray-700">
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -99,5 +119,76 @@
         </tr>
       </tbody>
     </table>
+    </div>
+  </div>
+
+  <!-- Token-2022 Transfer Hook Audits Tab -->
+  <div *ngIf="activeTab === 'transfer-hooks'">
+    <!-- Loading State -->
+    <div *ngIf="transferHooksLoading" class="flex items-center justify-center py-12">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-solana-purple"></div>
+      <span class="ml-3 text-gray-400">Loading Token-2022 transfer hook audits...</span>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="!transferHooksLoading && transferHookLogs.length === 0" class="text-center py-12 text-gray-400">
+      <p>No Token-2022 transfer hook audit logs recorded yet.</p>
+    </div>
+
+    <!-- Transfer Hook Table -->
+    <div *ngIf="!transferHooksLoading && transferHookLogs.length > 0" class="overflow-x-auto">
+      <p class="text-sm text-gray-400 mb-3">Showing {{ transferHookLogs.length }} transfer hook audit entries</p>
+      <table class="w-full text-sm text-left">
+        <thead class="text-xs uppercase bg-solana-dark text-gray-400">
+          <tr>
+            <th class="px-6 py-3">Timestamp</th>
+            <th class="px-6 py-3">Mint Address</th>
+            <th class="px-6 py-3">Source Wallet</th>
+            <th class="px-6 py-3">Destination Wallet</th>
+            <th class="px-6 py-3">Amount</th>
+            <th class="px-6 py-3">Signature</th>
+            <th class="px-6 py-3">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+          <tr *ngFor="let log of transferHookLogs" class="bg-solana-darker hover:bg-gray-800 transition-colors">
+            <td class="px-6 py-4 text-gray-400 whitespace-nowrap">{{ log.createdAt | date:'short' }}</td>
+            <td class="px-6 py-4 font-mono text-xs text-gray-400 max-w-[140px] truncate" [title]="log.mintAddress">
+              {{ log.mintAddress }}
+            </td>
+            <td class="px-6 py-4 font-mono text-xs text-gray-400 max-w-[140px] truncate" [title]="log.sourceWallet">
+              {{ log.sourceWallet }}
+            </td>
+            <td class="px-6 py-4 font-mono text-xs text-gray-400 max-w-[140px] truncate" [title]="log.destinationWallet">
+              {{ log.destinationWallet }}
+            </td>
+            <td class="px-6 py-4 text-gray-300 whitespace-nowrap">{{ log.amount }}</td>
+            <td class="px-6 py-4">
+              <a
+                *ngIf="log.transactionSignature as sig"
+                [href]="explorerUrl(sig)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-solana-purple hover:underline font-mono text-xs max-w-[160px] truncate inline-block"
+                [title]="sig"
+              >
+                {{ sig }}
+              </a>
+              <span
+                *ngIf="!log.transactionSignature"
+                class="px-2 py-1 rounded border text-xs font-semibold bg-red-400/10 text-red-400 border-red-400/30 whitespace-nowrap"
+              >
+                Blocked (Null Sig)
+              </span>
+            </td>
+            <td class="px-6 py-4">
+              <span [class]="transferHookStatusBadge(log.complianceStatus)" class="px-2 py-1 rounded border text-xs font-semibold">
+                {{ log.complianceStatus }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>

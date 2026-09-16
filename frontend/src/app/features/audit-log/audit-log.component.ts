@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BackendApiService } from '../../shared/services/backend-api.service';
-import { AuditLog, AuditLogStatus } from '../../shared/models/audit-log.model';
+import { AuditLog, AuditLogStatus, TransferHookAuditLog } from '../../shared/models/audit-log.model';
 
 @Component({
   selector: 'app-audit-log',
@@ -14,8 +14,12 @@ import { AuditLog, AuditLogStatus } from '../../shared/models/audit-log.model';
 export class AuditLogComponent implements OnInit {
   logs: AuditLog[] = [];
   filteredLogs: AuditLog[] = [];
+  transferHookLogs: TransferHookAuditLog[] = [];
   loading = true;
+  transferHooksLoading = true;
   error: string | null = null;
+
+  activeTab: 'general' | 'transfer-hooks' = 'general';
 
   /* Search / filter bindings */
   searchAction = '';
@@ -37,6 +41,35 @@ export class AuditLogComponent implements OnInit {
         this.loading = false;
       },
     });
+
+    this.api.getTransferHookAuditLogs().subscribe({
+      next: (logs) => {
+        this.transferHookLogs = logs;
+        this.transferHooksLoading = false;
+      },
+      error: () => {
+        this.transferHooksLoading = false;
+      },
+    });
+  }
+
+  setActiveTab(tab: 'general' | 'transfer-hooks'): void {
+    this.activeTab = tab;
+  }
+
+  transferHookStatusBadge(status: string): string {
+    switch (status) {
+      case 'CLEARED':
+        return 'bg-green-400/10 text-green-400 border-green-400/30';
+      case 'BLOCKED':
+        return 'bg-red-400/10 text-red-400 border-red-400/30';
+      default:
+        return 'bg-gray-400/10 text-gray-400 border-gray-400/30';
+    }
+  }
+
+  explorerUrl(signature: string): string {
+    return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
   }
 
   applyFilters(): void {

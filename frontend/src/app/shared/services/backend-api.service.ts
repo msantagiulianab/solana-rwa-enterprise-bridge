@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AssetToken, CreateAssetTokenRequest } from '../models/asset-token.model';
 import { Investor, RegisterInvestorRequest, UpdateInvestorStatusRequest } from '../models/investor.model';
-import { AuditLog } from '../models/audit-log.model';
+import { AuditLog, TransferHookAuditLog } from '../models/audit-log.model';
 
 @Injectable({
   providedIn: 'root',
@@ -50,5 +50,9 @@ export class BackendApiService {
 
   getAuditLogs(): Observable<AuditLog[]> {
     return this.http.get<AuditLog[]>(`${this.baseUrl}/audit-logs`);
+  }
+
+  getTransferHookAuditLogs(): Observable<TransferHookAuditLog[]> {
+    return this.http.get<TransferHookAuditLog[]>(`${this.baseUrl}/v1/compliance/transfer-hook-audit-logs`);
   }
 }

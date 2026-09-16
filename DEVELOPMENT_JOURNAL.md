@@ -1438,6 +1438,46 @@ only mutating HTTP methods (`POST`/`PATCH`/`PUT`/`DELETE`).
 **Verification:** `./mvnw test` → `Tests run: 273, Failures: 0, Errors: 0,
 Skipped: 3` (195 unit + 75 integration + 3 gated smoke tests skipped offline).
 
+---
+
+### Frontend: wire transfer-hook audit logs into AuditLogComponent (TDD, GREEN: 53 frontend specs)
+
+**Plan:** Expose `GET /api/v1/compliance/transfer-hook-audit-logs` in the Angular
+frontend as a second, tabbed view of the immutable audit trail.
+
+**Tests added (AuditLogComponent 11 → 17):**
+- `should fetch transfer hook audit logs on init` — asserts the second HTTP GET
+  to `${apiBaseUrl}/v1/compliance/transfer-hook-audit-logs` fires on init.
+- `should default to the general ledger tab` — asserts `activeTab === 'general'`.
+- `should toggle between general and transfer-hooks tabs` — exercises `setActiveTab`.
+- `should switch tabs from the segmented control` — clicks the tab button in the DOM.
+- `should render transfer hook rows with explorer links and null-sig indicator` —
+  asserts Solana Devnet explorer `tx` links (`target="_blank"`,
+  `rel="noopener noreferrer"`) for non-null signatures and the distinct
+  `Blocked (Null Sig)` indicator for null signatures.
+- `should map transfer hook compliance status to badge classes` — `CLEARED` green,
+  `BLOCKED` red.
+
+**Implementation:**
+- Added `TransferHookAuditLog` interface to `audit-log.model.ts` mirroring the
+  backend entity (`mintAddress`, `sourceWallet`, `destinationWallet`, `amount`,
+  `complianceStatus: 'CLEARED' | 'BLOCKED'`, nullable `transactionSignature` /
+  `reasonCode`, `createdAt`).
+- Added `BackendApiService.getTransferHookAuditLogs()`.
+- `AuditLogComponent` fetches both ledgers on init and exposes `activeTab`,
+  `setActiveTab`, `transferHookStatusBadge`, and `explorerUrl` (Devnet `/tx/`
+  links). Template adds a segmented tab switch and a dedicated transfer-hook
+  table with truncated mint/source/destination, clickable signature links, and
+  status badges.
+
+**Spring/Solana interactions:** Read-only render of the immutable
+`transfer_hook_audit_logs` ledger; no RPC dispatch originates from the frontend.
+
+**Verification:** `npm --prefix frontend test -- --watch=false
+--browsers=ChromeHeadless` → 53/53 SUCCESS; `npm --prefix frontend run build`
+compiles with zero errors.
+
+
 
 
 

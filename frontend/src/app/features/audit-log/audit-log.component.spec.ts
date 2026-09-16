@@ -3,7 +3,7 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { FormsModule } from '@angular/forms';
 import { AuditLogComponent } from './audit-log.component';
 import { environment } from '../../../environments/environment';
-import { AuditLog } from '../../shared/models/audit-log.model';
+import { AuditLog, TransferHookAuditLog } from '../../shared/models/audit-log.model';
 
 describe('AuditLogComponent', () => {
   let component: AuditLogComponent;
@@ -37,6 +37,32 @@ describe('AuditLogComponent', () => {
     },
   ];
 
+  const mockTransferHookLogs: TransferHookAuditLog[] = [
+    {
+      id: 'transfer-hook-uuid-1',
+      mintAddress: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      sourceWallet: 'DRpbCBMxVnDK7maPMoGQFix5grYexXr3coWsyhEcz6iZ',
+      destinationWallet: 'CvjpgaMsCNqmEH65WoFjfKep97Wvwy5uLCEiVRBUcoXH',
+      amount: 1250000,
+      complianceStatus: 'CLEARED',
+      reasonCode: null,
+      transactionSignature:
+        '5mocS4Rj8EXZQSYrT1mHGkPm9Kg7g4TsmQ6RzqDpEVPPu2VYJmL8cQwS4Rj8EXZQSYrT1mHGkPm9Kg7g4TsmQ6',
+      createdAt: '2026-08-01T10:10:00Z',
+    },
+    {
+      id: 'transfer-hook-uuid-2',
+      mintAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+      sourceWallet: 'CvjpgaMsCNqmEH65WoFjfKep97Wvwy5uLCEiVRBUcoXH',
+      destinationWallet: '9aYWGxnFxdYqXwWXQ3x4WjZPZMmWtDQ6Vp8F3nLfQKgW',
+      amount: 500000,
+      complianceStatus: 'BLOCKED',
+      reasonCode: 'SANCTIONED_DESTINATION',
+      transactionSignature: null,
+      createdAt: '2026-08-01T10:15:00Z',
+    },
+  ];
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AuditLogComponent, HttpClientTestingModule, FormsModule],
@@ -51,6 +77,14 @@ describe('AuditLogComponent', () => {
     httpMock.verify();
   });
 
+  /** Flushes both the general ledger and transfer-hook requests fired on init. */
+  function flushInitialLoad(): void {
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/v1/compliance/transfer-hook-audit-logs`)
+      .flush(mockTransferHookLogs);
+  }
+
   it('should create the component', () => {
     expect(component).toBeTruthy();
   });
@@ -61,6 +95,9 @@ describe('AuditLogComponent', () => {
     const req = httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`);
     expect(req.request.method).toBe('GET');
     req.flush(mockLogs);
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/v1/compliance/transfer-hook-audit-logs`)
+      .flush(mockTransferHookLogs);
 
     fixture.detectChanges();
 
@@ -72,11 +109,31 @@ describe('AuditLogComponent', () => {
     expect(component.filteredLogs[2].action).toBe('RPC_CALL');
   });
 
+  it('should fetch transfer hook audit logs on init', () => {
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(
+      `${environment.apiBaseUrl}/v1/compliance/transfer-hook-audit-logs`
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush(mockTransferHookLogs);
+    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+
+    fixture.detectChanges();
+
+    expect(component.transferHookLogs.length).toBe(2);
+    expect(component.transferHooksLoading).toBeFalse();
+  });
+
   it('should display error message on API failure', () => {
     fixture.detectChanges();
 
-    const req = httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`);
-    req.flush('Internal Server Error', { status: 500, statusText: 'Server Error' });
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/audit-logs`)
+      .flush('Internal Server Error', { status: 500, statusText: 'Server Error' });
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/v1/compliance/transfer-hook-audit-logs`)
+      .flush(mockTransferHookLogs);
 
     fixture.detectChanges();
 
@@ -89,7 +146,7 @@ describe('AuditLogComponent', () => {
 
   it('should filter logs by action search', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    flushInitialLoad();
     fixture.detectChanges();
 
     component.searchAction = 'MINT';
@@ -101,7 +158,7 @@ describe('AuditLogComponent', () => {
 
   it('should filter logs by status', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    flushInitialLoad();
     fixture.detectChanges();
 
     component.filterStatus = 'APPROVED';
@@ -113,7 +170,7 @@ describe('AuditLogComponent', () => {
 
   it('should filter logs by search and status combined', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    flushInitialLoad();
     fixture.detectChanges();
 
     component.searchAction = 'rpc';
@@ -126,7 +183,7 @@ describe('AuditLogComponent', () => {
 
   it('should clear all filters', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    flushInitialLoad();
     fixture.detectChanges();
 
     component.searchAction = 'something';
@@ -142,7 +199,7 @@ describe('AuditLogComponent', () => {
 
   it('should search in action, reason, and wallet address', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${environment.apiBaseUrl}/audit-logs`).flush(mockLogs);
+    flushInitialLoad();
     fixture.detectChanges();
 
     // Search by wallet address
@@ -183,5 +240,79 @@ describe('AuditLogComponent', () => {
     expect(component.actionBadge('KYC_VERIFIED')).toContain('text-blue-400');
     expect(component.actionBadge('CHECK_ELIGIBILITY')).toContain('text-cyan-400');
     expect(component.actionBadge('SOMETHING_ELSE')).toContain('text-gray-300');
+  });
+
+  it('should default to the general ledger tab', () => {
+    expect(component.activeTab).toBe('general');
+  });
+
+  it('should toggle between general and transfer-hooks tabs', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+    fixture.detectChanges();
+
+    expect(component.activeTab).toBe('general');
+
+    component.setActiveTab('transfer-hooks');
+    fixture.detectChanges();
+    expect(component.activeTab).toBe('transfer-hooks');
+
+    component.setActiveTab('general');
+    fixture.detectChanges();
+    expect(component.activeTab).toBe('general');
+  });
+
+  it('should switch tabs from the segmented control', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const buttons = Array.from(compiled.querySelectorAll('button'));
+    const transferHookBtn = buttons.find((b) =>
+      (b.textContent || '').includes('Token-2022 Transfer Hook Audits')
+    );
+    expect(transferHookBtn).toBeTruthy();
+
+    transferHookBtn!.click();
+    fixture.detectChanges();
+
+    expect(component.activeTab).toBe('transfer-hooks');
+  });
+
+  it('should render transfer hook rows with explorer links and null-sig indicator', () => {
+    fixture.detectChanges();
+    flushInitialLoad();
+    fixture.detectChanges();
+
+    component.setActiveTab('transfer-hooks');
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    // CLEARED row with a non-null signature renders a Solana Devnet explorer link
+    const link = compiled.querySelector(
+      'a[href*="explorer.solana.com/tx/"]'
+    ) as HTMLAnchorElement;
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('href')).toContain('cluster=devnet');
+    expect(link.getAttribute('href')).toContain(
+      mockTransferHookLogs[0].transactionSignature
+    );
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+
+    // BLOCKED row with a null signature renders the distinct indicator
+    expect(compiled.textContent).toContain('Blocked (Null Sig)');
+
+    // Status badges render both CLEARED and BLOCKED
+    expect(compiled.textContent).toContain('CLEARED');
+    expect(compiled.textContent).toContain('BLOCKED');
+  });
+
+  it('should map transfer hook compliance status to badge classes', () => {
+    expect(component.transferHookStatusBadge('CLEARED')).toContain('text-green-400');
+    expect(component.transferHookStatusBadge('BLOCKED')).toContain('text-red-400');
+    expect(component.transferHookStatusBadge('UNKNOWN')).toContain('text-gray-400');
   });
 });

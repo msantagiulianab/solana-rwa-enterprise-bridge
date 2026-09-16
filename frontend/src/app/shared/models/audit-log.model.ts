@@ -8,3 +8,15 @@ export interface AuditLog {
 }
 
 export type AuditLogStatus = 'APPROVED' | 'BLOCKED';
+
+export interface TransferHookAuditLog {
+  id: string;
+  mintAddress: string;
+  sourceWallet: string;
+  destinationWallet: string;
+  amount: number;
+  complianceStatus: 'CLEARED' | 'BLOCKED';
+  reasonCode?: string | null;
+  transactionSignature?: string | null;
+  createdAt: string;
+}
