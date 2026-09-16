@@ -30,7 +30,7 @@ import java.util.Set;
 @Component
 public class SimulatedTransferComplianceAdapter implements TransferCompliancePort {
 
-    public static final String SANCTIONED_DESTINATION_WALLET = "BLACKLISTED_DESTINATION_WALLET";
+    public static final String SANCTIONED_DESTINATION_WALLET = "11111111111111111111111111111111";
 
     public static final TransferComplianceReason APPROVED_REASON =
             new TransferComplianceReason("COMPLIANCE", "APPROVED");

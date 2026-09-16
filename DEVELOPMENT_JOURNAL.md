@@ -1526,6 +1526,43 @@ the immutable `transfer_hook_audit_logs` ledger by the service.
 **Verification:** `./mvnw test` → `Tests run: 276, Failures: 0, Errors: 0,
 Skipped: 3` (195 unit + 78 integration + 3 gated smoke tests skipped offline).
 
+---
+
+### Fix: valid Base58 sanctioned destination wallet (TDD, GREEN: 280 tests)
+
+**Plan:** Replace the non-base58 sentinel `"BLACKLISTED_DESTINATION_WALLET"`
+used by `SimulatedTransferComplianceAdapter` as the sanctioned destination wallet
+with a valid 32-byte base58 address (`11111111111111111111111111111111`, the
+Solana System Program public key), and lock the invariant in with a dedicated
+unit test.
+
+**Tests added (`SimulatedTransferComplianceAdapterTest`, new — 4):**
+- `sanctionedDestinationWallet_isValidBase58SolanaAddress` — asserts the
+  sanctioned destination constant is a 32–44 char base58 address; this test
+  fails against the previous 30-char, `_`-containing sentinel (RED).
+- `evaluateTransfer_blocksSanctionedDestination` — `BLOCKED` +
+  `SANCTIONED_DESTINATION` reason for the sanctioned wallet.
+- `evaluateTransfer_approvesNonSanctionedDestination` — `APPROVED` for a clean
+  destination.
+- `evaluateTransfer_blocksNonPositiveAmount` — `BLOCKED` + `INVALID_AMOUNT`
+  for a zero amount.
+
+**Implementation:**
+- `SimulatedTransferComplianceAdapter.SANCTIONED_DESTINATION_WALLET` now holds a
+  valid base58 address; the existing `SANCTIONED_DESTINATION_WALLETS` set (built
+  from the constant) is unchanged, preserving the deterministic evaluation order
+  (non-positive amount → sanctioned destination → approved).
+
+**Spring/Solana interactions:** The sanctioned sentinel is itself a valid base58
+address now, so it would survive `@ValidSolanaAddress` DTO validation were a
+caller to submit it through the authenticated `POST /api/v1/compliance/transfer`
+route; the fail-closed `BLOCKED` decision still precedes any RPC dispatch, and
+no live Devnet traffic is emitted.
+
+**Verification:** `./mvnw test -Dtest=SimulatedTransferComplianceAdapterTest,ComplianceControllerIT`
+→ GREEN (4 + 14); `./mvnw test` → `Tests run: 280, Failures: 0, Errors: 0,
+Skipped: 3` (199 unit + 78 integration + 3 gated smoke tests skipped offline).
+
 
 
 
