@@ -1477,6 +1477,23 @@ frontend as a second, tabbed view of the immutable audit trail.
 --browsers=ChromeHeadless` → 53/53 SUCCESS; `npm --prefix frontend run build`
 compiles with zero errors.
 
+---
+
+### Frontend: Token-2022 (Permanent Delegate) badge on the Asset Tokens table (TDD, GREEN: 55 frontend specs)
+
+**Plan:** Highlight in the Asset Tokenization Dashboard table that compliant tokens are minted under the Token-2022 program with a Permanent Delegate extension.
+
+**Tests added (AssetTokenizationComponent 13 → 15):**
+- `should render a Token-2022 (Permanent Delegate) badge for a valid mint address` — asserts a single `.token-2022-badge` element whose text contains `Token-2022 (Permanent Delegate)`.
+- `should not render a Token-2022 badge for a null or pending mint address` — asserts the null-mint `Pending...` row renders no badge.
+
+**Implementation:**
+- `AssetTokenizationComponent` template adds a Tailwind pill (`bg-purple-900/40 text-purple-300 border border-purple-700/50 text-xs px-2 py-0.5 rounded-full font-mono`) in the Mint Address column, guarded by the existing `isValidMintAddress(token.mintAddress)` check so `Pending...`/null rows render no badge.
+
+**Spring/Solana interactions:** Read-only render; no RPC dispatch. The badge only reflects the mint address already persisted off-chain and does not alter the compliance gate, audit trail, or idempotency behavior.
+
+**Verification:** `npm --prefix frontend test -- --watch=false --browsers=ChromeHeadless` → 55/55 SUCCESS; `SECURITY_API_KEY=<placeholder> npm --prefix frontend run build` compiles with zero errors.
+
 
 
 

@@ -63,6 +63,12 @@
               {{ truncateMintAddress(token.mintAddress!) }}
             </a>
             <ng-template #pendingMint>Pending...</ng-template>
+            <span
+              *ngIf="isValidMintAddress(token.mintAddress)"
+              class="token-2022-badge ml-2 inline-flex items-center bg-purple-900/40 text-purple-300 border border-purple-700/50 text-xs px-2 py-0.5 rounded-full font-mono"
+            >
+              Token-2022 (Permanent Delegate)
+            </span>
           </td>
           <td class="px-6 py-4">
             <span [class]="statusColor(token.complianceStatus)" class="font-semibold">

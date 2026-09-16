@@ -113,6 +113,34 @@ describe('AssetTokenizationComponent', () => {
     expect(rows[0].textContent).toContain('Pending...');
   });
 
+  it('should render a Token-2022 (Permanent Delegate) badge for a valid mint address', () => {
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/tokens`);
+    req.flush(mockTokens);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const badges = compiled.querySelectorAll('.token-2022-badge');
+
+    expect(badges.length).toBe(1);
+    expect(badges[0].textContent).toContain('Token-2022 (Permanent Delegate)');
+  });
+
+  it('should not render a Token-2022 badge for a null or pending mint address', () => {
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/tokens`);
+    req.flush(mockTokens);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const rows = compiled.querySelectorAll('tbody tr');
+    const pendingRow = rows[0];
+
+    expect(pendingRow.querySelector('.token-2022-badge')).toBeNull();
+  });
+
   it('should validate Solana base58 mint addresses', () => {
     expect(component.isValidMintAddress('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')).toBeTrue();
     expect(component.isValidMintAddress('Pending...')).toBeFalse();

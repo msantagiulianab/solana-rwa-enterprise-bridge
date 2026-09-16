@@ -103,7 +103,7 @@ The result is an auditable, regulator-friendly flow that keeps unvetted counterp
 
 | Path | Component | Purpose |
 |------|-----------|---------|
-| `/tokens` | `AssetTokenizationComponent` | Asset token dashboard — view tokens, tokenize new assets |
+| `/tokens` | `AssetTokenizationComponent` | Asset token dashboard — view tokens, tokenize new assets, Token-2022 (Permanent Delegate) mint badge |
 | `/investors` | `InvestorKycComponent` | Investor KYC registration, APPROVE/REJECT management |
 | `/audit-logs` | `AuditLogComponent` | Immutable audit trail viewer — General Ledger + Token-2022 transfer-hook audits (tabbed), search & status filters |
 
@@ -371,7 +371,7 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 | Backend unit tests (`*Test.java`) | 195 |
 | Backend integration tests (`*IT.java`) | 75 |
 | Backend live Devnet smoke tests (gated) | 3 |
-| Frontend specs | 53 |
+| Frontend specs | 55 |
 
 **Backend total: 270 passing tests** (195 unit + 75 integration), plus **3 live Devnet smoke tests** that are skipped by default and only run when `RUN_DEVNET_SMOKE_TESTS=true`.
 
@@ -379,7 +379,7 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 
 **Breakdown (integration):** `ComplianceControllerIT` (11) · `InvestorControllerIT` (10) · `InvestorRepositoryIT` (8) · `AssetTokenControllerIT` (7) · `AssetTokenRepositoryIT` (8) · `AuditLogRepositoryIT` (7) · `TransferHookIT` (3) · `TransferHookAuditLogRepositoryIT` (10) · `FinalityOutboxRepositoryIT` (2) · `ClawbackIT` (2) · `MaritimeRepositoryIT` (5) · `MaritimeSettlementE2EIT` (2)
 
-**Breakdown (frontend):** `AssetTokenizationComponent` (13) · `AuditLogComponent` (17) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
+**Breakdown (frontend):** `AssetTokenizationComponent` (15) · `AuditLogComponent` (17) · `AppComponent` (9) · `InvestorKycComponent` (8) · `SolanaWalletService` (4) · `apiKeyInterceptor` (2)
 
 *Counts are updated automatically per the project's TDD automation protocol.*
 
@@ -405,7 +405,7 @@ gated live Devnet smoke tests (see below).
 ```bash
 cd frontend
 npm install
-npm test -- --watch=false --browsers=ChromeHeadless   # 47 specs
+npm test -- --watch=false --browsers=ChromeHeadless   # 55 specs
 ```
 
 ## Live Devnet Smoke Test
