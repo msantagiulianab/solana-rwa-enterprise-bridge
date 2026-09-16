@@ -3,13 +3,17 @@ package com.solana.rwa.bridge.controller;
 import com.solana.rwa.bridge.dto.ComplianceCheckResponse;
 import com.solana.rwa.bridge.entity.AssetTokenComplianceStatus;
 import com.solana.rwa.bridge.entity.KycStatus;
+import com.solana.rwa.bridge.entity.TransferHookAuditLog;
+import com.solana.rwa.bridge.entity.TransferHookAuditStatus;
 import com.solana.rwa.bridge.exception.InvestorNotFoundException;
+import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
 import com.solana.rwa.bridge.service.ComplianceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -17,7 +21,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.solana.rwa.bridge.config.ApiKeyAuthInterceptor;
 
 import java.time.Instant;
+import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -46,6 +52,9 @@ class ComplianceControllerIT {
 
     @MockitoBean
     private ComplianceService complianceService;
+
+    @MockitoBean
+    private TransferHookAuditLogRepository transferHookAuditLogRepository;
 
     @Test
     void check_returns200AndAllowedWhenEligible() throws Exception {
@@ -195,5 +204,32 @@ class ComplianceControllerIT {
 
         mockMvc.perform(get("/api/v1/compliance/audit-logs/{walletAddress}", WALLET))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getTransferHookAuditLogs_returns200AndList() throws Exception {
+        TransferHookAuditLog log = TransferHookAuditLog.builder()
+                .transactionSignature("mock-tx-signature")
+                .mintAddress(MINT)
+                .sourceWallet(WALLET)
+                .destinationWallet("DSTabcdefghijkmnpqrstuvwxyz123456789")
+                .amount(250)
+                .complianceStatus(TransferHookAuditStatus.CLEARED)
+                .reasonCode("KYC_PASSED")
+                .createdAt(Instant.parse("2026-09-16T10:00:00Z"))
+                .build();
+        when(transferHookAuditLogRepository.findAll(any(Sort.class)))
+                .thenReturn(List.of(log));
+
+        mockMvc.perform(get("/api/v1/compliance/transfer-hook-audit-logs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].transactionSignature").value("mock-tx-signature"))
+                .andExpect(jsonPath("$[0].mintAddress").value(MINT))
+                .andExpect(jsonPath("$[0].sourceWallet").value(WALLET))
+                .andExpect(jsonPath("$[0].destinationWallet").value("DSTabcdefghijkmnpqrstuvwxyz123456789"))
+                .andExpect(jsonPath("$[0].amount").value(250))
+                .andExpect(jsonPath("$[0].complianceStatus").value("CLEARED"))
+                .andExpect(jsonPath("$[0].reasonCode").value("KYC_PASSED"))
+                .andExpect(jsonPath("$[0].createdAt").exists());
     }
 }

@@ -3,9 +3,12 @@ package com.solana.rwa.bridge.controller;
 import com.solana.rwa.bridge.dto.ComplianceCheckRequest;
 import com.solana.rwa.bridge.dto.ComplianceCheckResponse;
 import com.solana.rwa.bridge.entity.AuditLog;
+import com.solana.rwa.bridge.entity.TransferHookAuditLog;
+import com.solana.rwa.bridge.repository.TransferHookAuditLogRepository;
 import com.solana.rwa.bridge.service.ComplianceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +27,7 @@ import java.util.List;
 public class ComplianceController {
 
     private final ComplianceService complianceService;
+    private final TransferHookAuditLogRepository transferHookAuditLogRepository;
 
     /**
      * POST /api/v1/compliance/check — evaluates investor eligibility off-chain.
@@ -40,5 +44,14 @@ public class ComplianceController {
     @GetMapping("/audit-logs/{walletAddress}")
     public List<AuditLog> auditLogs(@PathVariable String walletAddress) {
         return complianceService.getAuditLogs(walletAddress);
+    }
+
+    /**
+     * GET /api/v1/compliance/transfer-hook-audit-logs — immutable transfer-hook
+     * compliance ledger, newest first.
+     */
+    @GetMapping("/transfer-hook-audit-logs")
+    public List<TransferHookAuditLog> transferHookAuditLogs() {
+        return transferHookAuditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 }

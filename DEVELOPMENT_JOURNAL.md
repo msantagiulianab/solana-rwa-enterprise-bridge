@@ -1411,6 +1411,33 @@ suite now totals **272 tests** — `Tests run: 272, Failures: 0, Errors: 0, Skip
 hook and full RWA lifecycle (mint → compliant transfer → blocked compliance audit → permanent
 delegate clawback) is verified live on Solana Devnet.
 
+---
+
+## 2026-09-16
+
+### GET /api/v1/compliance/transfer-hook-audit-logs (TDD, GREEN: 273 tests)
+
+**Plan:** Expose a read-only endpoint for the immutable `TransferHookAuditLog`
+ledger (`transfer_hook_audit_logs`, Flyway V5) from `ComplianceController`,
+sorted newest first by creation time.
+
+**Tests added:**
+- `ComplianceControllerIT.getTransferHookAuditLogs_returns200AndList` — asserts
+  `GET /api/v1/compliance/transfer-hook-audit-logs` returns HTTP 200 with the
+  expected JSON list, mocking `TransferHookAuditLogRepository.findAll(Sort)`.
+
+**Implementation:**
+- Injected `TransferHookAuditLogRepository` into `ComplianceController`.
+- Added `@GetMapping("/transfer-hook-audit-logs")` returning
+  `findAll(Sort.by(Sort.Direction.DESC, "createdAt"))` (newest first).
+
+**Spring/Solana interactions:** Read-only REST route; no RPC dispatch is
+triggered. The route remains public under `ApiKeyAuthInterceptor`, which gates
+only mutating HTTP methods (`POST`/`PATCH`/`PUT`/`DELETE`).
+
+**Verification:** `./mvnw test` → `Tests run: 273, Failures: 0, Errors: 0,
+Skipped: 3` (195 unit + 75 integration + 3 gated smoke tests skipped offline).
+
 
 
 
