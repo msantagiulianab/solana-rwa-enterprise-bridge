@@ -1612,3 +1612,41 @@ persisted.
 --browsers=ChromeHeadless` → 60/60 SUCCESS; `SECURITY_API_KEY=<placeholder>
 npm --prefix frontend run build` compiles with zero errors.
 
+
+---
+
+### Frontend: persist explicit wallet disconnect (TDD, GREEN: 63 frontend specs)
+
+**Plan:** Fix the wallet disconnect persistence bug — clicking "Disconnect" only
+toggled the UI cosmetically, and a page refresh auto-reconnected the wallet.
+Persist the disconnected state so auto-connect is skipped after an explicit
+disconnect.
+
+**Tests added:**
+- `SolanaWalletService` (7 → 10):
+  - `should not attempt to reconnect after an explicit disconnect` — with no
+    stored auto-connect flag, `autoConnect()` returns `null` without calling
+    `provider.connect()`.
+  - `should persist the auto-connect flag after a successful connection` —
+    `connectWallet()` writes the `walletName` identifier to `localStorage`.
+  - `should disconnect the provider, clear the auto-connect flag, and reset
+    state` — `disconnectWallet()` invokes `provider.disconnect()`, removes the
+    `walletName` key, and emits `null`.
+
+**Implementation:**
+- `SolanaWalletService.connectWallet()` persists a non-sensitive wallet
+  identifier (`walletName = 'phantom'`) to `localStorage` on success so the
+  authorized session can still be restored on refresh.
+- `SolanaWalletService.disconnectWallet()` removes that identifier and emits
+  `null` after `await provider.disconnect()`.
+- `SolanaWalletService.autoConnect()` now returns `null` immediately when the
+  auto-connect flag is absent, so an explicit disconnect is honored across
+  reloads. Only the wallet identifier is persisted — never the public key.
+
+**Spring/Solana interactions:** No backend or RPC changes. Client-only change;
+signing remains delegated to the browser wallet provider.
+
+**Verification:** `npm --prefix frontend test -- --watch=false
+--browsers=ChromeHeadless` → 63/63 SUCCESS; `npx tsc --noEmit` on both app and
+spec configs passes with zero errors.
+

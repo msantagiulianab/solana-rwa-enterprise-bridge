@@ -1,6 +1,15 @@
 import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { BehaviorSubject, Observable } from 'rxjs';
+/**
+ * localStorage key used to remember the last connected wallet so an
+ * authorized session can be restored on refresh. Only this non-sensitive
+ * wallet identifier is persisted — never the connected public key.
+ */
+const WALLET_NAME_STORAGE_KEY = 'walletName';
+
+/** Wallet identifier persisted under {@link WALLET_NAME_STORAGE_KEY}. */
+const WALLET_NAME_PHANTOM = 'phantom';
 
 declare global {
   interface Window {
@@ -99,6 +108,8 @@ export class SolanaWalletService {
       const publicKey = response.publicKey.toString();
       this.connectedPublicKeySubject.next(publicKey);
 
+      this.persistAutoConnectFlag();
+
       provider.on('disconnect', this.handleDisconnect);
       provider.on('accountChanged', this.handleAccountChanged);
 
@@ -118,6 +129,10 @@ export class SolanaWalletService {
    */
   async autoConnect(): Promise<string | null> {
     if (!this.isBrowser) {
+      return null;
+    }
+
+    if (!this.hasAutoConnectFlag()) {
       return null;
     }
 
@@ -162,6 +177,7 @@ export class SolanaWalletService {
     }
 
     this.connectedPublicKeySubject.next(null);
+    this.clearAutoConnectFlag();
   }
 
   /**
@@ -169,6 +185,27 @@ export class SolanaWalletService {
    */
   getConnectedPublicKey(): string | null {
     return this.connectedPublicKeySubject.getValue();
+  }
+
+  private persistAutoConnectFlag(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    localStorage.setItem(WALLET_NAME_STORAGE_KEY, WALLET_NAME_PHANTOM);
+  }
+
+  private clearAutoConnectFlag(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    localStorage.removeItem(WALLET_NAME_STORAGE_KEY);
+  }
+
+  private hasAutoConnectFlag(): boolean {
+    if (!this.isBrowser) {
+      return false;
+    }
+    return !!localStorage.getItem(WALLET_NAME_STORAGE_KEY);
   }
 
   private readonly handleDisconnect = (): void => {
