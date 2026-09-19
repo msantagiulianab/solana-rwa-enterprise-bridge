@@ -375,7 +375,7 @@ CORS is configured globally in `WebConfig` (`backend/src/main/java/com/solana/rw
 | Backend live Devnet smoke tests (gated) | 3 |
 | Frontend specs | 63 |
 
-**Backend total: 277 passing tests** (199 unit + 78 integration), plus **3 live Devnet smoke tests** that are skipped by default and only run when `RUN_DEVNET_SMOKE_TESTS=true`.
+**Backend total: 280 tests** (199 unit + 78 integration + 3 gated smoke) — the 3 smoke tests are skipped by default and only run when `RUN_DEVNET_SMOKE_TESTS=true`.
 
 **Breakdown (unit):** `ComplianceServiceTest` (15) · `SolanaRpcAdapterTest` (29) · `ComplianceDtosValidationTest` (12) · `TokenServiceTest` (11) · `TokenTransferServiceTest` (2) · `TokenClawbackServiceTest` (3) · `ComputeBudgetInstructionTest` (7) · `Token2022MintExtensionTest` (7) · `SolanaKeypairServiceTest` (6) · `SolanaMintServiceTest` (6) · `ApiKeyAuthInterceptorTest` (5) · `SolanaAddressValidatorTest` (5) · `SolanaTransactionSerializerTest` (1) · `AuditExportServiceTest` (13) · `ComplianceAuditExportControllerTest` (7) · `ComplianceClawbackControllerTest` (8) · `CsvAuditExporterTest` (6) · `JsonAuditExporterTest` (4) · `SimulationPayloadTest` (5) · `TransactionSimulationServiceTest` (6) · `TransactionSimulationControllerTest` (6) · `FinalityConfirmationWorkerTest` (8) · `SimulatedMaritimeClearanceAdapterTest` (6) · `SimulatedTransferComplianceAdapterTest` (4) · `MaritimeSettlementServiceTest` (8) · `MaritimeSettlementControllerTest` (9)
 
@@ -395,11 +395,11 @@ against in-memory H2 (PostgreSQL mode); only the gated live smoke tests touch th
 
 ```bash
 cd backend
-./mvnw test        # macOS/Linux — 276 tests: 195 unit + 78 integration + 3 gated smoke (skipped)
+./mvnw test        # macOS/Linux — 280 tests: 199 unit + 78 integration + 3 gated smoke (skipped)
 # Windows: mvnw.cmd test
 ```
 
-Expect `Tests run: 276, Failures: 0, Errors: 0, Skipped: 3` — the 3 skipped tests are the
+Expect `Tests run: 280, Failures: 0, Errors: 0, Skipped: 3` — the 3 skipped tests are the
 gated live Devnet smoke tests (see below).
 
 ### Frontend
@@ -407,7 +407,7 @@ gated live Devnet smoke tests (see below).
 ```bash
 cd frontend
 npm install
-npm test -- --watch=false --browsers=ChromeHeadless   # 60 specs
+npm test -- --watch=false --browsers=ChromeHeadless   # 63 specs
 ```
 
 ## Live Devnet Smoke Test
